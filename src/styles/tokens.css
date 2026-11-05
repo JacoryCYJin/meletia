@@ -1,0 +1,52 @@
+:root {
+  color-scheme: light dark;
+
+  --bg: #ffffff;
+  --panel: #f7f7f5;
+  --pill: #f1f1ef;
+  --hover: rgba(55, 53, 47, 0.06);
+  --selected: rgba(55, 53, 47, 0.08);
+  --line: rgba(55, 53, 47, 0.09);
+  --line-strong: rgba(55, 53, 47, 0.16);
+  --ink: #373530;
+  --muted: #787774;
+  --faint: rgba(55, 53, 47, 0.45);
+  --primary-bg: #373530;
+  --primary-ink: #ffffff;
+  --focus: rgba(55, 53, 47, 0.14);
+  --select: rgba(55, 53, 47, 0.14);
+
+  --sans:
+    -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC",
+    "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+  --mono: "SF Mono", ui-monospace, Menlo, monospace;
+
+  --radius: 4px;
+  --radius-md: 6px;
+  --radius-lg: 8px;
+  --shadow:
+    0 0 0 1px rgba(15, 15, 15, 0.04), 0 2px 6px rgba(15, 15, 15, 0.04),
+    0 12px 32px rgba(15, 15, 15, 0.1);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #191919;
+    --panel: #202020;
+    --pill: #252525;
+    --hover: rgba(255, 255, 255, 0.055);
+    --selected: rgba(255, 255, 255, 0.09);
+    --line: rgba(255, 255, 255, 0.094);
+    --line-strong: rgba(255, 255, 255, 0.16);
+    --ink: #d4d4d4;
+    --muted: #9b9b9b;
+    --faint: rgba(212, 212, 212, 0.45);
+    --primary-bg: #ffffff;
+    --primary-ink: #191919;
+    --focus: rgba(255, 255, 255, 0.2);
+    --select: rgba(255, 255, 255, 0.18);
+    --shadow:
+      0 0 0 1px rgba(255, 255, 255, 0.04), 0 2px 6px rgba(0, 0, 0, 0.3),
+      0 12px 32px rgba(0, 0, 0, 0.45);
+  }
+}
