@@ -2,28 +2,29 @@
   color-scheme: light dark;
 
   --bg: #ffffff;
-  --panel: #f7f7f5;
-  --pill: #f1f1ef;
-  --hover: rgba(55, 53, 47, 0.06);
-  --selected: rgba(55, 53, 47, 0.08);
-  --line: rgba(55, 53, 47, 0.09);
-  --line-strong: rgba(55, 53, 47, 0.16);
-  --ink: #373530;
-  --muted: #787774;
-  --faint: rgba(55, 53, 47, 0.45);
-  --primary-bg: #373530;
+  --panel: #f7f7f7;
+  --pill: #f1f1f1;
+  --hover: rgba(0, 0, 0, 0.05);
+  --selected: #e9e9e9;
+  --line: rgba(0, 0, 0, 0.08);
+  --line-strong: rgba(0, 0, 0, 0.15);
+  --ink: #171717;
+  --muted: #5f5f5f;
+  --faint: #737373;
+  --primary-bg: #171717;
   --primary-ink: #ffffff;
-  --focus: rgba(55, 53, 47, 0.14);
-  --select: rgba(55, 53, 47, 0.14);
+  --focus: rgba(0, 0, 0, 0.35);
+  --select: rgba(0, 0, 0, 0.14);
 
   --sans:
     -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC",
     "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
   --mono: "SF Mono", ui-monospace, Menlo, monospace;
 
-  --radius: 4px;
-  --radius-md: 6px;
-  --radius-lg: 8px;
+  --control-height: 36px;
+  --radius: 8px;
+  --radius-md: 10px;
+  --radius-lg: 14px;
   --shadow:
     0 0 0 1px rgba(15, 15, 15, 0.04), 0 2px 6px rgba(15, 15, 15, 0.04),
     0 12px 32px rgba(15, 15, 15, 0.1);
@@ -35,15 +36,15 @@
     --panel: #202020;
     --pill: #252525;
     --hover: rgba(255, 255, 255, 0.055);
-    --selected: rgba(255, 255, 255, 0.09);
+    --selected: #303030;
     --line: rgba(255, 255, 255, 0.094);
     --line-strong: rgba(255, 255, 255, 0.16);
-    --ink: #d4d4d4;
-    --muted: #9b9b9b;
-    --faint: rgba(212, 212, 212, 0.45);
+    --ink: #f2f2f2;
+    --muted: #b5b5b5;
+    --faint: #969696;
     --primary-bg: #ffffff;
     --primary-ink: #191919;
-    --focus: rgba(255, 255, 255, 0.2);
+    --focus: rgba(255, 255, 255, 0.45);
     --select: rgba(255, 255, 255, 0.18);
     --shadow:
       0 0 0 1px rgba(255, 255, 255, 0.04), 0 2px 6px rgba(0, 0, 0, 0.3),

@@ -28,7 +28,7 @@ const card = (id, progress = {}) => ({
   },
 });
 
-const settings = { dailyNew: 10, groupSize: 10, learnStreak: 4 };
+const settings = { dailyNew: 10, groupSize: 10 };
 const book = (cardIds) => ({
   id: "b",
   name: "练习",
@@ -71,6 +71,34 @@ test("the daily new allowance shrinks by words learned today", () => {
   );
   assert.equal(tasks.fresh.length, 7);
   assert.equal(tasks.allowance, 7);
+});
+
+test("daily review allowance counts distinct completed reviews and gives recall priority", () => {
+  const due = (id) => card(id, { stage: "reviewing", dueAt: day(-1).toISOString() });
+  const recall = card("back", { stage: "consolidating", needsRecall: true });
+  const cards = [due("a"), due("b"), recall, card("fresh")];
+  const books = [book(cards.map((item) => item.id))];
+  const at = now.toISOString();
+  const reviews = [
+    { cardId: "done", stage: "review", at },
+    { cardId: "done", stage: "review", at },
+    { cardId: "fresh", stage: "learn", at },
+    { cardId: "back", stage: "spell", at },
+    { cardId: "previous", stage: "review", at: day(-1).toISOString() },
+  ];
+
+  const limited = dayTasks(cards, books, { ...settings, dailyReview: 2 }, now, reviews);
+  assert.deepEqual(limited.recall.map((item) => item.id), ["back"]);
+  assert.deepEqual(limited.review, []);
+  assert.equal(limited.reviewDeferred, 2);
+  assert.deepEqual(limited.fresh, ["fresh"]);
+
+  const capped = dayTasks(cards, books, { ...settings, dailyReview: 1 }, now, reviews);
+  assert.deepEqual(capped.recall, []);
+  assert.equal(capped.reviewDeferred, 3);
+  const unlimited = dayTasks(cards, books, { ...settings, dailyReview: null }, now, reviews);
+  assert.equal(unlimited.reviewDeferred, 0);
+  assert.equal(unlimited.review.length, 2);
 });
 
 test("streak counts back from today and forgives a day that just started", () => {

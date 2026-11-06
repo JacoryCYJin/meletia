@@ -2,7 +2,7 @@
 import { computed, onMounted, onUnmounted, ref } from "vue";
 import { state } from "../../core/library.js";
 import { bookStats } from "../../core/books.js";
-import { dayTasks, streakOf, todayLabel } from "../../core/stats.js";
+import { dayTasks } from "../../core/stats.js";
 
 defineEmits(["start"]);
 
@@ -16,13 +16,11 @@ onMounted(() => {
 onUnmounted(() => clearInterval(timer));
 
 const tasks = computed(() =>
-  dayTasks(state.cards, state.books, state.settings, now.value),
+  dayTasks(state.cards, state.books, state.settings, now.value, state.reviews),
 );
 const reviewTotal = computed(
   () => tasks.value.recall.length + tasks.value.review.length,
 );
-const streak = computed(() => streakOf(state.reviews, now.value));
-const today = computed(() => todayLabel(state.cards, state.reviews, now.value));
 
 const books = computed(() =>
   state.books
@@ -46,12 +44,13 @@ const summary = computed(() => {
   if (tasks.value.review.length)
     parts.push(`${tasks.value.review.length} 个到期`);
   if (tasks.value.fresh.length) parts.push(`${tasks.value.fresh.length} 个新词`);
+  if (!parts.length && tasks.value.reviewDeferred) return "已达每日复习上限，还有待复习词。";
   return parts.length ? `今天有 ${parts.join("，")}。` : "今天的任务做完了。";
 });
 </script>
 
 <template>
-  <section class="page">
+  <section class="page today-page">
     <header class="page-head">
       <p class="eyebrow">{{ dateText }}</p>
       <h1>今日</h1>
@@ -67,6 +66,9 @@ const summary = computed(() => {
             {{ tasks.recall.length }} 个上次没答对，先回炉；
           </template>
           {{ tasks.review.length }} 个按间隔到期。
+          <template v-if="tasks.reviewDeferred">
+            另有 {{ tasks.reviewDeferred }} 个因每日上限未安排。
+          </template>
         </p>
         <button
           type="button"
@@ -83,8 +85,7 @@ const summary = computed(() => {
         <p class="task-count">{{ tasks.fresh.length }}</p>
         <p class="task-hint">
           每日上限 {{ state.settings.dailyNew }} 个，每组
-          {{ state.settings.groupSize }} 个，答对
-          {{ state.settings.learnStreak }} 次进入复习。
+          {{ state.settings.groupSize }} 个。
         </p>
         <button
           type="button"
@@ -116,27 +117,8 @@ const summary = computed(() => {
       </div>
     </div>
 
-    <dl class="facts">
-      <div>
-        <dt>连续</dt>
-        <dd>{{ streak }} 天</dd>
-      </div>
-      <div>
-        <dt>今日复习</dt>
-        <dd>{{ today.reviewedToday }}</dd>
-      </div>
-      <div>
-        <dt>今日学会</dt>
-        <dd>{{ today.introducedToday }}</dd>
-      </div>
-      <div>
-        <dt>词库</dt>
-        <dd>{{ state.cards.length }} 张</dd>
-      </div>
-    </dl>
-
     <p v-if="!state.cards.length" class="empty-note">
-      还没有词条。到「导入」页拖入飞书导出的 CSV，或在「词库」里手写一条。
+      还没有词条。可以导入词表，或打开一本词书手动添加。
     </p>
   </section>
 </template>

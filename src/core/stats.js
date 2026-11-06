@@ -1,20 +1,39 @@
 import { localDay } from "./content.js";
 import { freshQueue, isDue } from "./books.js";
 
-export function dayTasks(cards, books, settings, now = new Date()) {
-  const recall = cards.filter((card) => card.progress.needsRecall);
-  const recallIds = new Set(recall.map((card) => card.id));
-  const review = cards.filter(
+export function dayTasks(cards, books, settings, now = new Date(), reviews = []) {
+  const recallPending = cards.filter((card) => card.progress.needsRecall);
+  const recallIds = new Set(recallPending.map((card) => card.id));
+  const reviewPending = cards.filter(
     (card) => !recallIds.has(card.id) && isDue(card, now),
   );
 
+  const today = localDay(now);
+  let recall = recallPending;
+  let review = reviewPending;
+  if (Number.isSafeInteger(settings.dailyReview) && settings.dailyReview >= 0) {
+    const completed = new Set(reviews
+      .filter((entry) => entry.stage === "review" && localDay(new Date(entry.at)) === today)
+      .map((entry) => entry.cardId));
+    let remaining = Math.max(0, settings.dailyReview - completed.size);
+    const withinAllowance = (card) => {
+      if (completed.has(card.id)) return true;
+      if (remaining <= 0) return false;
+      remaining -= 1;
+      return true;
+    };
+    recall = recallPending.filter(withinAllowance);
+    review = reviewPending.filter(withinAllowance);
+  }
+  const reviewDeferred = recallPending.length + reviewPending.length - recall.length - review.length;
+
   const learnedToday = cards.filter(
-    (card) => card.progress.introducedOn === localDay(now),
+    (card) => card.progress.introducedOn === today,
   ).length;
   const allowance = Math.max(0, settings.dailyNew - learnedToday);
   const fresh = freshQueue(books, cards, allowance);
 
-  return { recall, review, fresh, allowance };
+  return { recall, review, fresh, allowance, reviewDeferred };
 }
 
 export function todayLabel(cards, reviews, now = new Date()) {

@@ -3,14 +3,18 @@ import { computed, onMounted, onUnmounted, ref } from "vue";
 import Icon from "../../shared/Icon.vue";
 import { blankCard, senseLine } from "../../core/content.js";
 import {
-  booksOfCard,
   deleteCard,
   saveCard,
   setError,
   setNotice,
   state,
 } from "../../core/library.js";
-import { isDue } from "../../core/books.js";
+import { bookCards, isDue } from "../../core/books.js";
+
+const props = defineProps({ book: { type: Object, required: true } });
+defineEmits(["back"]);
+
+const cards = computed(() => bookCards(props.book, state.cards));
 
 const filters = [
   { id: "all", label: "全部" },
@@ -33,7 +37,6 @@ const filter = ref("all");
 const draft = ref(null);
 const isNew = ref(false);
 const tagsText = ref("");
-const selectedBooks = ref([]);
 const busy = ref(false);
 const confirming = ref(false);
 
@@ -48,7 +51,7 @@ function statusOf(card) {
 
 const rows = computed(() => {
   const query = search.value.trim().toLowerCase();
-  return state.cards
+  return cards.value
     .filter((card) => filter.value === "all" || statusOf(card).id === filter.value)
     .filter((card) => {
       if (!query) return true;
@@ -61,15 +64,14 @@ const rows = computed(() => {
 });
 
 const counts = computed(() => {
-  const result = { all: state.cards.length, new: 0, due: 0, learned: 0 };
-  for (const card of state.cards) result[statusOf(card).id] += 1;
+  const result = { all: cards.value.length, new: 0, due: 0, learned: 0 };
+  for (const card of cards.value) result[statusOf(card).id] += 1;
   return result;
 });
 
 function openCard(card) {
   draft.value = JSON.parse(JSON.stringify(card));
   tagsText.value = (card.tags ?? []).join("，");
-  selectedBooks.value = booksOfCard(card).map((book) => book.id);
   isNew.value = false;
   confirming.value = false;
 }
@@ -77,7 +79,6 @@ function openCard(card) {
 function openNew() {
   draft.value = blankCard();
   tagsText.value = "";
-  selectedBooks.value = [];
   isNew.value = true;
   confirming.value = false;
 }
@@ -147,8 +148,8 @@ async function save() {
 
   busy.value = true;
   try {
-    await saveCard(clean, selectedBooks.value);
-    setNotice(isNew.value ? "已加入词库。" : "已保存。");
+    await saveCard(clean, props.book.id);
+    setNotice(isNew.value ? "已加入词书。" : "已保存。");
     close();
   } catch (cause) {
     setError(cause);
@@ -165,7 +166,7 @@ async function remove() {
   }
   busy.value = true;
   try {
-    await deleteCard(draft.value.id);
+    await deleteCard(draft.value.id, props.book.id);
     setNotice("已删除。");
     close();
   } catch (cause) {
@@ -179,9 +180,9 @@ async function remove() {
 <template>
   <section class="page">
     <header class="page-head">
-      <p class="eyebrow">词库</p>
-      <h1>{{ state.cards.length }} 张卡片</h1>
-      <p class="lede">可以逐条修改释义、补词组和例句。</p>
+      <button type="button" class="link" @click="$emit('back')">返回词书</button>
+      <h1>{{ book.name }}</h1>
+      <p class="lede">{{ cards.length }} 张卡片</p>
     </header>
 
     <div class="toolbar">
@@ -285,27 +286,6 @@ async function remove() {
             <button type="button" class="link" @click="addSense">
               + 添加义项
             </button>
-          </fieldset>
-
-          <fieldset class="field">
-            <legend>所属词书</legend>
-            <div class="chips">
-              <label
-                v-for="book in state.books"
-                :key="book.id"
-                class="chip"
-              >
-                <input
-                  v-model="selectedBooks"
-                  type="checkbox"
-                  :value="book.id"
-                />
-                <span>{{ book.name }}</span>
-              </label>
-            </div>
-            <p v-if="!state.books.length" class="muted">
-              还没有词书，保存时会放进「自建」。
-            </p>
           </fieldset>
 
           <fieldset class="field">
