@@ -7,6 +7,7 @@ import {
   migrateStore,
   parseSenses,
   senseLine,
+  STORE_VERSION,
   wordKey,
 } from "../src/core/content.js";
 
@@ -51,9 +52,9 @@ test("version 1 cards become new-progress cards grouped into source books", () =
     ],
   });
 
-  assert.equal(store.version, 4);
+  assert.equal(store.version, STORE_VERSION);
   assert.equal(store.migrated, true);
-  assert.equal(store.cards.length, 2);
+  assert.equal(store.cards.length, 3);
   assert.equal(store.cards[0].progress.stage, "new");
   assert.equal(store.cards[0].progress.needsRecall, false);
   assert.equal(store.settings.dailyNew, 20);
@@ -97,7 +98,7 @@ test("version 2 schedules carry over into learning progress", () => {
   assert.equal(store.books[0].name, "练习");
 });
 
-test("reloading version 4 keeps books, settings and review logs", () => {
+test("migrating version 4 keeps books, settings and review logs", () => {
   const card = { ...blankCard(new Date(2026, 10, 4, 9)), term: "make sense" };
   const store = migrateStore({
     version: 4,
@@ -114,9 +115,8 @@ test("reloading version 4 keeps books, settings and review logs", () => {
     reviews: [{ cardId: card.id, at: "2026-11-04T09:00:00.000Z", rating: 3 }],
   });
 
-  assert.equal(store.migrated, false);
-  assert.equal(store.settings.dailyNew, 30);
-  assert.equal(store.settings.groupSize, 20);
+  assert.equal(store.migrated, true);
+  assert.deepEqual(store.settings, { dailyNew: 30, groupSize: 20, dailyReview: null });
   assert.equal(store.books[0].name, "雅思练习生词");
   assert.equal(store.books[0].active, false);
   assert.equal(store.reviews.length, 1);
@@ -127,4 +127,25 @@ test("keys ignore case and surrounding space", () => {
   assert.equal(wordKey("  Make Sense "), "make sense");
   assert.equal(idFor("SCOPE"), idFor("scope"));
   assert.notEqual(idFor("scope"), idFor("contract"));
+});
+
+test("migration removes unowned cards and splits shared cards without duplicating review history", () => {
+  const card = { ...blankCard(), term: "contract" };
+  const orphan = { ...blankCard(), term: "scope" };
+  const store = migrateStore({
+    version: 5,
+    cards: [card, orphan],
+    books: [
+      { id: "a", name: "A", cardIds: [card.id] },
+      { id: "b", name: "B", cardIds: [card.id] },
+    ],
+    reviews: [
+      { cardId: card.id, at: "2026-11-04T09:00:00.000Z" },
+      { cardId: orphan.id, at: "2026-11-04T09:00:00.000Z" },
+    ],
+  });
+  assert.deepEqual(store.cards.map((item) => item.term), ["contract", "contract"]);
+  assert.equal(store.books[0].cardIds[0], card.id);
+  assert.notEqual(store.books[1].cardIds[0], card.id);
+  assert.deepEqual(store.reviews.map((record) => record.cardId), [card.id]);
 });

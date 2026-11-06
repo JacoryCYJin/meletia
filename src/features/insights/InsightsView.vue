@@ -26,12 +26,12 @@ const learned = computed(
     <header class="page-head">
       <p class="eyebrow">数据</p>
       <h1>{{ streak }} 天连续</h1>
-      <p class="lede">只统计这台电脑上的词库与复习记录。</p>
+      <p class="lede">只统计这台电脑上的词书与复习记录。</p>
     </header>
 
     <dl class="facts">
       <div>
-        <dt>词库</dt>
+        <dt>词书卡片</dt>
         <dd>{{ state.cards.length }}</dd>
       </div>
       <div>

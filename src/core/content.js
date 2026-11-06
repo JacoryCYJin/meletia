@@ -3,12 +3,12 @@ import { stageForStep, stepForDays } from "./scheduler.js";
 const PART_OF_SPEECH =
   /(?:n|v|vi|vt|adj|adv|prep|pron|conj|det|interj|aux|num|art|abbr)\./gi;
 
-export const STORE_VERSION = 4;
+export const STORE_VERSION = 6;
 
 export const DEFAULT_SETTINGS = {
   dailyNew: 20,
   groupSize: 10,
-  learnStreak: 4,
+  dailyReview: null,
 };
 
 export function wordKey(term) {
@@ -82,6 +82,47 @@ export function definitionOf(card) {
   return (card.senses ?? []).map(senseLine).join("；");
 }
 
+export function meaningChoices(card, cards) {
+  const partsOf = ({ text }) =>
+    text.normalize("NFKC").toLowerCase().split(/[，、,；;。/]+/)
+      .map((part) => part.trim()).filter(Boolean);
+  const correct = card.senses.find((sense) => partsOf(sense).length);
+  if (!correct) return [];
+
+  const seen = new Set(card.senses.flatMap(partsOf));
+  const samePartOfSpeech = [];
+  const otherPartsOfSpeech = [];
+  const term = wordKey(card.term);
+  for (const item of cards) {
+    if (item.id === card.id || wordKey(item.term) === term) continue;
+    const candidates = item.senses
+      .map((sense) => ({ sense, parts: partsOf(sense), term: item.term }))
+      .filter(({ parts }) => parts.length && parts.every((part) => !seen.has(part)));
+    const matching = candidates.filter(({ sense }) =>
+      sense.pos.toLowerCase() === correct.pos.toLowerCase(),
+    );
+    if (matching.length) samePartOfSpeech.push(matching);
+    else if (candidates.length) otherPartsOfSpeech.push(candidates);
+  }
+
+  const choices = [{ text: senseLine(correct), term: card.term, correct: true }];
+  for (const pool of [samePartOfSpeech, otherPartsOfSpeech]) {
+    while (pool.length && choices.length < 4) {
+      const pick = Math.floor(Math.random() * pool.length);
+      const [candidates] = pool.splice(pick, 1);
+      const choice = candidates.find(({ parts }) => parts.every((part) => !seen.has(part)));
+      if (!choice) continue;
+      choice.parts.forEach((part) => seen.add(part));
+      choices.push({ text: senseLine(choice.sense), term: choice.term, correct: false });
+    }
+  }
+  if (choices.length < 2) return [];
+
+  const position = Math.floor(Math.random() * choices.length);
+  [choices[0], choices[position]] = [choices[position], choices[0]];
+  return choices;
+}
+
 export function defaultProgress() {
   return {
     stage: "new",
@@ -99,7 +140,7 @@ export function defaultProgress() {
 export function newCard(row, now = new Date()) {
   const term = String(row.word ?? "").trim();
   return {
-    id: idFor(term),
+    id: newCardId(),
     term,
     kind: /\s/.test(term) ? "phrase" : "word",
     phonetics: { uk: "", us: "" },
@@ -110,18 +151,25 @@ export function newCard(row, now = new Date()) {
     source: String(row.source ?? "").trim(),
     status: String(row.status ?? "").trim(),
     markedOn: String(row.date ?? "").trim(),
-    tags: [],
+    tags: String(row.tags ?? "")
+      .split(/[,，、;；]+/)
+      .map((tag) => tag.trim())
+      .filter(Boolean),
     createdAt: now.toISOString(),
     progress: defaultProgress(),
   };
 }
 
-export function blankCard(now = new Date()) {
-  const id =
+function newCardId() {
+  return (
     globalThis.crypto?.randomUUID?.() ??
-    `c${Math.random().toString(16).slice(2, 10)}`;
+    `c${Math.random().toString(16).slice(2)}`
+  );
+}
+
+export function blankCard(now = new Date()) {
   return {
-    id,
+    id: newCardId(),
     term: "",
     kind: "word",
     phonetics: { uk: "", us: "" },
@@ -192,19 +240,23 @@ export function sourcesOf(card) {
     .filter(Boolean);
 }
 
-function buildBooks(cards, rawBooks) {
-  if (Array.isArray(rawBooks) && rawBooks.length) {
+function buildBooks(cards, rawBooks, legacy) {
+  if (Array.isArray(rawBooks) && (rawBooks.length || !legacy)) {
     return rawBooks
       .filter((book) => book && Array.isArray(book.cardIds))
       .map((book) => ({
         id: book.id || bookId(book.name),
         name: String(book.name ?? "未命名词书"),
         source: String(book.source ?? ""),
+        legacy: book.legacy ??
+          (legacy && Boolean(book.source || ["自建", "未分类"].includes(book.name))),
         cardIds: book.cardIds.filter(Boolean),
         active: book.active !== false,
         createdAt: book.createdAt ?? new Date().toISOString(),
       }));
   }
+
+  if (!legacy) return [];
 
   const groups = new Map();
   for (const card of cards) {
@@ -219,6 +271,7 @@ function buildBooks(cards, rawBooks) {
     id: bookId(name),
     name,
     source: name,
+    legacy: true,
     cardIds,
     active: true,
     createdAt: new Date().toISOString(),
@@ -231,45 +284,53 @@ export function migrateStore(raw, now = new Date()) {
     throw new Error("词库格式无法读取。");
   }
 
-  const seen = new Set();
+  const legacy = (data.version ?? 0) < 5;
+  const byTerm = new Set();
+  const byId = new Set();
   const cards = [];
   for (const entry of data.cards) {
     const card = normalizeCard(entry, now);
     if (!card.term) continue;
     const key = wordKey(card.term);
-    if (seen.has(key)) continue;
-    seen.add(key);
+    if (byId.has(card.id) || ((data.version ?? 0) < 4 && byTerm.has(key))) continue;
+    byId.add(card.id);
+    byTerm.add(key);
     cards.push(card);
   }
 
-  const known = new Set(cards.map((card) => card.id));
-  const books = buildBooks(cards, data.books).map((book) => ({
-    ...book,
-    cardIds: book.cardIds.filter((id) => known.has(id)),
-  }));
-
-  const assigned = new Set(books.flatMap((book) => book.cardIds));
-  const orphans = cards
-    .filter((card) => !assigned.has(card.id))
-    .map((card) => card.id);
-  if (orphans.length) {
-    books.push({
-      id: bookId("未分类"),
-      name: "未分类",
-      source: "",
-      cardIds: orphans,
-      active: true,
-      createdAt: now.toISOString(),
-    });
-  }
+  const byCardId = new Map(cards.map((card) => [card.id, card]));
+  const owned = new Map();
+  const books = buildBooks(cards, data.books, legacy).map((book) => {
+    const cardIds = [];
+    for (const id of new Set(book.cardIds)) {
+      const card = byCardId.get(id);
+      if (!card) continue;
+      let ownedCard = card;
+      if (owned.has(id)) {
+        // The first book keeps the original ID and its historical review log.
+        let copyId = newCardId();
+        while (byCardId.has(copyId) || owned.has(copyId)) copyId = newCardId();
+        ownedCard = { ...card, id: copyId };
+      }
+      owned.set(ownedCard.id, ownedCard);
+      cardIds.push(ownedCard.id);
+    }
+    return { ...book, cardIds };
+  });
 
   return {
     version: STORE_VERSION,
-    settings: { ...DEFAULT_SETTINGS, ...(data.settings ?? {}) },
-    cards,
+    settings: {
+      dailyNew: data.settings?.dailyNew ?? DEFAULT_SETTINGS.dailyNew,
+      groupSize: data.settings?.groupSize ?? DEFAULT_SETTINGS.groupSize,
+      dailyReview: Number.isSafeInteger(data.settings?.dailyReview) && data.settings.dailyReview >= 0
+        ? data.settings.dailyReview
+        : DEFAULT_SETTINGS.dailyReview,
+    },
+    cards: [...owned.values()],
     books,
     reviews: Array.isArray(data.reviews)
-      ? data.reviews.filter((review) => review && review.at && review.cardId)
+      ? data.reviews.filter((review) => review?.at && owned.has(review.cardId))
       : [],
     migrated: data.version !== STORE_VERSION,
   };

@@ -1,6 +1,12 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { parseWords, previewImport } from "../src/core/importer.js";
+import { hasKnownHeader, mapRows, parseTable, previewImport, suggestMapping } from "../src/core/importer.js";
+
+function parseWords(text) {
+  const table = parseTable(text);
+  const hasHeader = hasKnownHeader(table.data[0]);
+  return { rows: mapRows(table.data, hasHeader, suggestMapping(table, hasHeader)) };
+}
 
 test("Feishu CSV filters full phrases by status, source and date", () => {
   const { rows } = parseWords(
@@ -27,4 +33,14 @@ test("rows without a definition are skipped", () => {
   const preview = previewImport(rows, []);
   assert.equal(preview.added.length, 1);
   assert.equal(preview.skipped, 1);
+});
+
+test("arbitrary titles and column order can be mapped with or without a header", () => {
+  const table = parseTable('说明;类别;项目\n"有道理;说得通";work;make sense', ";");
+  assert.equal(hasKnownHeader(table.data[0]), false);
+  const mapping = { word: 2, definition: 0, tags: 1 };
+  assert.deepEqual(mapRows(table.data, true, mapping), [
+    { word: "make sense", definition: "有道理;说得通", tags: "work" },
+  ]);
+  assert.equal(mapRows(table.data, false, mapping)[0].word, "项目");
 });

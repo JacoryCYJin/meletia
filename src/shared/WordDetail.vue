@@ -9,7 +9,7 @@ defineProps({ card: { type: Object, required: true } });
       <span>{{ sense.text }}</span>
     </p>
     <p v-if="!card.senses.length" class="sense muted">
-      还没有释义，可以在「词库」里补。
+      还没有释义，可以在所属词书中补充。
     </p>
 
     <div v-if="card.phrases.length" class="block">
