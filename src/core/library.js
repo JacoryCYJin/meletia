@@ -8,11 +8,13 @@ import {
   localDay,
   migrateStore,
   newCard,
+  parseSenses,
   wordKey,
 } from "./content.js";
 import { previewImport } from "./importer.js";
 import { bookCards } from "./books.js";
 import { dueAfter, nextStep, stageForStep } from "./scheduler.js";
+import { resumeLearnCheckpoint } from "./session.js";
 
 const PREVIEW_KEY = "meletia-preview";
 
@@ -20,6 +22,7 @@ export const state = reactive({
   books: [],
   cards: [],
   reviews: [],
+  learnCheckpoint: null,
   settings: { ...DEFAULT_SETTINGS },
   ready: false,
   busy: false,
@@ -34,6 +37,7 @@ function payload(next = {}) {
     books: next.books ?? state.books,
     cards: next.cards ?? state.cards,
     reviews: next.reviews ?? state.reviews,
+    learnCheckpoint: next.learnCheckpoint === undefined ? state.learnCheckpoint : next.learnCheckpoint,
   });
 }
 
@@ -54,6 +58,7 @@ export async function loadLibrary() {
   try {
     const raw = await readRaw();
     const store = raw ? migrateStore(raw) : emptyStore();
+    store.learnCheckpoint = resumeLearnCheckpoint(store.learnCheckpoint, store.cards);
     if (store.migrated) {
       const data = payload(store);
       if (isTauri()) {
@@ -66,6 +71,7 @@ export async function loadLibrary() {
     state.books = store.books;
     state.cards = store.cards;
     state.reviews = store.reviews;
+    state.learnCheckpoint = store.learnCheckpoint;
     state.settings = store.settings;
     state.ready = true;
   } catch (cause) {
@@ -77,11 +83,22 @@ async function commit(next) {
   if (state.busy) throw new Error("上一项更改正在保存，请稍后再试。");
   state.busy = true;
   try {
-    await writeRaw(payload(next));
-    Object.assign(state, next);
+    const changes = {
+      ...next,
+      learnCheckpoint: resumeLearnCheckpoint(
+        next.learnCheckpoint === undefined ? state.learnCheckpoint : next.learnCheckpoint,
+        next.cards ?? state.cards,
+      ),
+    };
+    await writeRaw(payload(changes));
+    Object.assign(state, changes);
   } finally {
     state.busy = false;
   }
+}
+
+export async function saveLearnCheckpoint(learnCheckpoint) {
+  await commit({ learnCheckpoint });
 }
 
 export function setNotice(message) {
@@ -110,6 +127,7 @@ function newBook(title) {
   if (state.books.some((book) => book.name === name || book.id === id)) {
     throw new Error("已有同名词书，请选择已有词书或换个名称。");
   }
+  const createdAt = new Date().toISOString();
   return {
     id,
     name,
@@ -117,7 +135,8 @@ function newBook(title) {
     legacy: false,
     cardIds: [],
     active: true,
-    createdAt: new Date().toISOString(),
+    createdAt,
+    updatedAt: createdAt,
   };
 }
 
@@ -141,7 +160,9 @@ export async function saveCard(card, bookId) {
   await commit({
     cards,
     books: existing ? state.books : state.books.map((item) =>
-      item.id === bookId ? { ...item, cardIds: [...item.cardIds, card.id] } : item,
+      item.id === bookId
+        ? { ...item, cardIds: [...item.cardIds, card.id], updatedAt: new Date().toISOString() }
+        : item,
     ),
   });
 }
@@ -151,17 +172,28 @@ export function cardsInImportTarget(bookId) {
   return book ? bookCards(book, state.cards) : [];
 }
 
-export async function importCards(rows, target) {
+export async function importCards(rows, target, { filters = {}, resolutions = {} } = {}) {
   const creating = target.name !== undefined;
   const book = creating ? newBook(target.name) : requireBook(target.bookId);
-  const { added } = previewImport(rows, bookCards(book, state.cards));
-  if (!added.length) return 0;
+  const { added, updated: changed } = previewImport(rows, bookCards(book, state.cards), filters, resolutions);
+  if (!added.length && !changed.length) return 0;
   const cards = added.map((row) => newCard(row));
-  const updated = { ...book, cardIds: [...book.cardIds, ...cards.map((card) => card.id)] };
+  const replacements = new Map(changed.map(({ card, row }) => [card.id, parseSenses(row.definition)]));
+  const updated = {
+    ...book, cardIds: [...book.cardIds, ...cards.map((card) => card.id)],
+    updatedAt: new Date().toISOString(),
+  };
   const books = creating
     ? [...state.books, updated]
     : state.books.map((item) => item.id === book.id ? updated : item);
-  await commit({ cards: [...state.cards, ...cards], books });
+  await commit({
+    cards: [
+      ...state.cards.map((card) => replacements.has(card.id)
+        ? { ...card, senses: replacements.get(card.id) } : card),
+      ...cards,
+    ],
+    books,
+  });
   return cards.length;
 }
 
@@ -198,13 +230,16 @@ export function previewBookMerge(primaryId, secondaryId) {
 }
 
 export async function mergeBooks(primaryId, secondaryId, newName) {
-  const { primary, secondary, cardIds, duplicates } = previewBookMerge(primaryId, secondaryId);
+  const { primary, secondary, cardIds, duplicates, moved } = previewBookMerge(primaryId, secondaryId);
   const creating = newName !== undefined;
   const destination = creating
     ? { ...newBook(newName), active: primary.active || secondary.active }
     : primary;
   const books = state.books.filter((book) => book.id !== secondaryId);
-  const merged = { ...destination, cardIds };
+  const merged = {
+    ...destination, cardIds,
+    updatedAt: creating || moved > 0 ? new Date().toISOString() : destination.updatedAt,
+  };
 
   await commit({
     books: creating
@@ -293,7 +328,7 @@ export function missSpelling(card, now = new Date()) {
   };
 }
 
-export async function saveStudyResult(card, stage, rating, now = new Date()) {
+export async function saveStudyResult(card, stage, rating, now = new Date(), learnCheckpoint) {
   const updated = {
     learn: graduate,
     review: (item, at) => reviewCard(item, rating, at),
@@ -303,11 +338,12 @@ export async function saveStudyResult(card, stage, rating, now = new Date()) {
   await commit({
     cards: state.cards.map((item) => (item.id === card.id ? updated : item)),
     reviews: [...state.reviews, record],
+    learnCheckpoint,
   });
   return { record, previousProgress: card.progress, savedProgress: updated.progress };
 }
 
-export async function undoStudyResult({ record, previousProgress, savedProgress }) {
+export async function undoStudyResult({ record, previousProgress, savedProgress }, learnCheckpoint) {
   const card = cardById(record.cardId);
   const index = state.reviews.findIndex((entry) => toRaw(entry) === record);
   if (!card || toRaw(card.progress) !== savedProgress || index < 0) {
@@ -319,5 +355,5 @@ export async function undoStudyResult({ record, previousProgress, savedProgress 
   );
   const reviews = state.reviews.slice();
   reviews.splice(index, 1);
-  await commit({ cards, reviews });
+  await commit({ cards, reviews, learnCheckpoint });
 }

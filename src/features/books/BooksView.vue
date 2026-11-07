@@ -1,10 +1,10 @@
 <script setup>
 import { computed, nextTick, onMounted, onUnmounted, ref } from "vue";
 import {
-  createBook, deleteBook, mergeBooks, previewBookMerge, setError, setNotice,
+  createBook, mergeBooks, previewBookMerge, setError, setNotice,
   state, updateBook,
 } from "../../core/library.js";
-import { bookStats } from "../../core/books.js";
+import { bookStats, bookUpdatedText } from "../../core/books.js";
 import Icon from "../../shared/Icon.vue";
 import ImportView from "../import/ImportView.vue";
 
@@ -38,7 +38,6 @@ const creating = ref(false);
 const pending = ref(false);
 const importDialog = ref(null);
 const importOpen = ref(false);
-const removing = ref(null);
 const mergeSource = ref("");
 const mergeOther = ref("");
 const mergeMode = ref("existing");
@@ -69,7 +68,6 @@ function cancelImport(event) {
 }
 
 function openMerge(book) {
-  removing.value = null;
   mergeSource.value = book.id;
   mergeOther.value = "";
   mergeMode.value = "existing";
@@ -84,20 +82,6 @@ async function saveNewBook() {
     await createBook(newName.value);
     newName.value = "";
     creating.value = false;
-  } catch (cause) {
-    setError(cause);
-  } finally {
-    pending.value = false;
-  }
-}
-
-async function removeBook(book) {
-  if (pending.value) return;
-  pending.value = true;
-  try {
-    await deleteBook(book.id);
-    removing.value = null;
-    setNotice(`已删除「${book.name}」。`);
   } catch (cause) {
     setError(cause);
   } finally {
@@ -201,6 +185,7 @@ async function toggle(book) {
                     · {{ stats.recall }} 回炉
                   </template>
                 </p>
+                <p class="book-updated">{{ bookUpdatedText(book) }}</p>
               </div>
               <button
                 type="button"
@@ -220,17 +205,9 @@ async function toggle(book) {
                 }"
               ></span>
             </div>
-            <div class="book-actions">
-              <template v-if="removing === book.id">
-                <span class="muted">删除「{{ book.name }}」及其 {{ stats.total }} 张卡片和复习记录？</span>
-                <button type="button" :disabled="pending" @click="removeBook(book)">确认删除</button>
-                <button type="button" :disabled="pending" @click="removing = null">取消</button>
-              </template>
-              <template v-else>
-                <button v-if="book.legacy" type="button" class="ghost" :disabled="state.busy" @click="convertLegacy(book)">转为我的词书</button>
-                <button v-if="books.length > 1" type="button" class="ghost" :disabled="state.busy" @click="openMerge(book)">合并</button>
-                <button type="button" class="ghost" :disabled="state.busy" @click="mergeSource = ''; mergeOther = ''; removing = book.id">删除</button>
-              </template>
+            <div v-if="book.legacy || books.length > 1" class="book-actions">
+              <button v-if="book.legacy" type="button" class="ghost" :disabled="state.busy" @click="convertLegacy(book)">转为我的词书</button>
+              <button v-if="books.length > 1" type="button" class="ghost" :disabled="state.busy" @click="openMerge(book)">合并</button>
             </div>
             <form v-if="mergeSource === book.id" class="book-merge" @submit.prevent="confirmMerge">
               <div class="filters">

@@ -18,15 +18,17 @@ import {
   spellTarget,
   startSpelling,
 } from "../../core/session.js";
-import { cardById, saveStudyResult, setError, state, undoStudyResult } from "../../core/library.js";
+import {
+  cardById, saveLearnCheckpoint, saveStudyResult, setError, state, undoStudyResult,
+} from "../../core/library.js";
 import { dayTasks } from "../../core/stats.js";
 
 const props = defineProps({ mode: { type: String, required: true } });
 const emit = defineEmits(["close"]);
 
-const yes = { value: 3, label: "认识" };
-const learningGrades = [yes, { value: 1, label: "不认识" }];
-const reviewGrades = [yes, { value: 2, label: "模糊" }, { value: 1, label: "忘记了" }];
+const yes = { value: 3, label: "认识", key: "Q" };
+const learningGrades = [yes, { value: 1, label: "不认识", key: "E" }];
+const reviewGrades = [yes, { value: 2, label: "模糊", key: "2" }, { value: 1, label: "忘记了", key: "E" }];
 const roundLabels = {
   choice: "选释义",
   recall: "无提示回想词义",
@@ -41,10 +43,12 @@ const answer = ref("");
 const feedback = ref("");
 const selectedChoice = ref(null);
 const openedChoices = ref(new Set());
+const correctFeedback = ref(false);
 const busy = ref(false);
 const stage = ref(null);
 const spellingInput = ref(null);
 let feedbackTimer;
+let correctFeedbackTimer;
 
 const entry = computed(() => currentEntry(session.value));
 const card = computed(() => (entry.value ? cardById(entry.value.id) : null));
@@ -81,12 +85,20 @@ const spellingComplete = computed(() =>
 );
 const stageLabel = computed(() => (props.mode === "learn" ? "学习" : "复习"));
 const choiceFeedback = computed(() => session.value?.phase === "choice-feedback");
+const learningChoice = computed(() => props.mode === "learn" && round.value === "choice");
 const unaidedRecall = computed(() => round.value === "recall" && session.value?.phase === "card");
 const showPrevious = computed(() =>
   ["card", "choice-feedback", "detail", "spelling-ready"].includes(session.value?.phase),
 );
 
 function buildSession() {
+  if (props.mode === "learn" && state.learnCheckpoint) {
+    const saved = state.learnCheckpoint;
+    session.value = saved.session;
+    restoredChoices.value = saved.choices ?? null;
+    selectedChoice.value = saved.selectedChoice ?? null;
+    return;
+  }
   const tasks = dayTasks(state.cards, state.books, state.settings, new Date(), state.reviews);
   if (props.mode === "learn") {
     const cards = tasks.fresh.map(cardById).filter(Boolean);
@@ -96,8 +108,9 @@ function buildSession() {
   }
 }
 
-function focusStage() {
+function focusStage(resetScroll = false) {
   nextTick(() => {
+    if (resetScroll) stage.value?.querySelector(".stage-content")?.scrollTo(0, 0);
     if (session.value?.phase === "spell") spellingInput.value?.focus();
     else stage.value?.focus();
   });
@@ -112,6 +125,7 @@ onMounted(() => {
 onUnmounted(() => {
   window.removeEventListener("keydown", onKey);
   clearTimeout(feedbackTimer);
+  clearTimeout(correctFeedbackTimer);
 });
 
 function moveTo(next) {
@@ -119,7 +133,26 @@ function moveTo(next) {
   selectedChoice.value = null;
   openedChoices.value = new Set();
   restoredChoices.value = null;
-  focusStage();
+  focusStage(true);
+}
+
+async function persistPosition(next, details) {
+  busy.value = true;
+  try {
+    await saveLearnCheckpoint({ session: next, ...details });
+    return true;
+  } catch (cause) {
+    setError(cause);
+    return false;
+  } finally {
+    busy.value = false;
+  }
+}
+
+async function moveWithCheckpoint(next) {
+  if (busy.value) return;
+  if (props.mode === "learn" && !await persistPosition(next)) return;
+  moveTo(next);
 }
 
 async function advance(next, rating) {
@@ -131,6 +164,7 @@ async function advance(next, rating) {
     saved: null,
   };
   if (next.done.length === session.value.done.length) {
+    if (props.mode === "learn" && !await persistPosition(next)) return;
     previous.value = checkpoint;
     moveTo(next);
     return;
@@ -139,7 +173,8 @@ async function advance(next, rating) {
   busy.value = true;
   try {
     checkpoint.saved = await saveStudyResult(
-      card.value, props.mode, entry.value.firstRating ?? rating,
+      card.value, props.mode, entry.value.firstRating ?? rating, new Date(),
+      props.mode === "learn" ? { session: next } : undefined,
     );
     previous.value = checkpoint;
     moveTo(next);
@@ -156,7 +191,9 @@ async function goBack() {
 
   busy.value = true;
   try {
-    if (checkpoint.saved) await undoStudyResult(checkpoint.saved);
+    const savedPosition = props.mode === "learn" ? { session: checkpoint.session } : undefined;
+    if (checkpoint.saved) await undoStudyResult(checkpoint.saved, savedPosition);
+    else if (savedPosition) await saveLearnCheckpoint(savedPosition);
     previous.value = null;
     moveTo(checkpoint.session);
     restoredChoices.value = checkpoint.choices;
@@ -167,22 +204,47 @@ async function goBack() {
   }
 }
 
-function grade(value, choice = null) {
-  if (busy.value || session.value.phase !== "card" || !meaning.value) return;
+async function grade(value, choice = null) {
+  if (busy.value || correctFeedback.value || session.value.phase !== "card" || !meaning.value) return;
   const next = answerQuestion(session.value, value, { selectedOption: Boolean(choice) });
   if (showMeaning.value) return advance(continueQuestion(next), value);
+  if (props.mode === "learn") {
+    const details = next.phase === "choice-feedback"
+      ? { choices: choices.value, selectedChoice: choice.text }
+      : undefined;
+    if (!await persistPosition(next, details)) return;
+  }
+  if (learningChoice.value && choice?.correct) {
+    selectedChoice.value = choice.text;
+    correctFeedback.value = true;
+    focusStage();
+    const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    correctFeedbackTimer = setTimeout(() => {
+      correctFeedback.value = false;
+      session.value = next;
+      focusStage(true);
+    }, reducedMotion ? 180 : 650);
+    return;
+  }
   if (next.phase === "detail" || next.phase === "choice-feedback") {
     session.value = next;
     selectedChoice.value = choice?.text ?? null;
-    focusStage();
+    focusStage(next.phase === "detail");
     return;
   }
   return advance(next, value);
 }
 
 function isRevealed(choice) {
+  if (correctFeedback.value) return choice.correct;
   return choiceFeedback.value &&
     (choice.correct || selectedChoice.value === choice.text || openedChoices.value.has(choice.text));
+}
+
+function choiceResult(choice) {
+  if ((correctFeedback.value || choiceFeedback.value) && choice.correct) return "correct";
+  if (choiceFeedback.value && selectedChoice.value === choice.text) return "incorrect";
+  return "";
 }
 
 function chooseOption(choice) {
@@ -194,9 +256,12 @@ function chooseOption(choice) {
   grade(choice.correct ? 3 : 1, choice);
 }
 
-function openDetail() {
-  session.value = showAnswerDetail(session.value);
-  focusStage();
+async function openDetail() {
+  if (busy.value) return;
+  const next = showAnswerDetail(session.value);
+  if (!await persistPosition(next)) return;
+  session.value = next;
+  focusStage(true);
 }
 
 function next() {
@@ -216,22 +281,26 @@ async function submitSpelling() {
   const target = spellingCard.value;
   if (!target || busy.value || !answer.value.trim()) return;
   const correct = matchSpelling(answer.value, target.term);
+  const next = spell(session.value, correct);
 
   busy.value = true;
   try {
     if (!correct) {
-      await saveStudyResult(target, "spell", 1);
+      await saveStudyResult(target, "spell", 1, new Date(),
+        props.mode === "learn" ? { session: next } : undefined,
+      );
       feedback.value = "拼写不对，稍后再试。";
       clearTimeout(feedbackTimer);
       feedbackTimer = setTimeout(() => {
         feedback.value = "";
       }, 2400);
     } else {
+      if (props.mode === "learn") await saveLearnCheckpoint({ session: next });
       feedback.value = "";
     }
 
     answer.value = "";
-    moveTo(spell(session.value, correct));
+    moveTo(next);
   } catch (cause) {
     setError(cause);
   } finally {
@@ -239,8 +308,12 @@ async function submitSpelling() {
   }
 }
 
-function skip() {
-  if (!busy.value) moveTo(skipSpelling(session.value));
+async function skip() {
+  if (busy.value) return;
+  const next = skipSpelling(session.value);
+  if (next === session.value) return;
+  if (props.mode === "learn" && !await persistPosition(next)) return;
+  emit("close");
 }
 
 function onKey(event) {
@@ -250,6 +323,11 @@ function onKey(event) {
   const onButton = event.target?.closest?.("button");
   const phase = session.value?.phase;
   const confirm = event.key === "Enter" || event.code === "Space";
+
+  if (correctFeedback.value) {
+    if (confirm && !onButton && !typing) event.preventDefault();
+    return;
+  }
 
   if (choiceFeedback.value && !typing &&
       (event.code === "Space" || (confirm && !onButton))) {
@@ -271,14 +349,19 @@ function onKey(event) {
       grade(1);
       return;
     }
-    if (!/^[1-4]$/.test(event.key) || !meaning.value) return;
-    const key = Number(event.key);
-    const choice = choices.value[key - 1];
-    const item = grades.value.find(({ value }) => value === key);
-    if (choices.value.length ? !choice : !item) return;
-    event.preventDefault();
-    if (choice) grade(choice.correct ? 3 : 1, choice);
-    else grade(item.value);
+    if (!meaning.value) return;
+    if (choices.value.length) {
+      if (!/^[1-4]$/.test(event.key)) return;
+      const choice = choices.value[Number(event.key) - 1];
+      if (!choice) return;
+      event.preventDefault();
+      grade(choice.correct ? 3 : 1, choice);
+    } else {
+      const item = grades.value.find(({ key }) => key.toLowerCase() === event.key.toLowerCase());
+      if (!item) return;
+      event.preventDefault();
+      grade(item.value);
+    }
     return;
   }
 
@@ -294,7 +377,7 @@ function onKey(event) {
     next();
   } else if (phase === "spelling-ready") {
     event.preventDefault();
-    moveTo(startSpelling(session.value));
+    moveWithCheckpoint(startSpelling(session.value));
   } else if (phase === "finished" && event.key === "Enter") {
     event.preventDefault();
     emit("close");
@@ -312,7 +395,7 @@ function onKey(event) {
         v-if="showPrevious"
         type="button"
         class="ghost"
-        :disabled="busy || !previous"
+        :disabled="busy || correctFeedback || !previous"
         @click="goBack"
       >上一词</button>
       <p class="study-mode">{{ stageLabel }}</p>
@@ -328,38 +411,106 @@ function onKey(event) {
       class="stage"
       tabindex="-1"
     >
-      <p class="stage-meta">
-        <span>{{ showMeaning && session.phase === "card" ? "看释义" : roundLabels[round] }}</span>
-        <span v-if="card.source && !unaidedRecall" class="tag">{{ card.source }}</span>
-      </p>
+      <div class="stage-content">
+        <p class="stage-meta">
+          <span>{{ showMeaning && session.phase === "card" ? "看释义" : roundLabels[round] }}</span>
+          <span v-if="card.source && !unaidedRecall" class="tag">{{ card.source }}</span>
+        </p>
 
-      <div v-if="round === 'reverse' && session.phase === 'card'" class="senses">
-        <p v-for="(sense, index) in card.senses" :key="index" class="sense">
-          <span v-if="sense.pos" class="pos">{{ sense.pos }}</span>
-          <span>{{ sense.text }}</span>
-        </p>
+        <div v-if="round === 'reverse' && session.phase === 'card'" class="senses">
+          <p v-for="(sense, index) in card.senses" :key="index" class="sense">
+            <span v-if="sense.pos" class="pos">{{ sense.pos }}</span>
+            <span>{{ sense.text }}</span>
+          </p>
+        </div>
+        <template v-else>
+          <h2 class="term">{{ card.term }}</h2>
+          <p v-if="!unaidedRecall && (card.phonetics?.uk || card.phonetics?.us)" class="phonetic">
+            /{{ card.phonetics.uk || card.phonetics.us }}/
+          </p>
+        </template>
+
+        <template v-if="session.phase === 'detail'">
+          <p v-if="selectedChoice && props.mode === 'review'" class="waiting" role="status">
+            {{ session.rating === 3 ? "选对了" : "选错了" }} · {{ selectedChoice }}
+          </p>
+          <WordDetail :card="card" :class="{ 'choice-detail-enter': learningChoice }" />
+        </template>
+
+        <template v-else-if="!meaning && !choiceFeedback">
+          <p class="waiting">此词暂无释义，可以在所属词书中补充。</p>
+        </template>
+
+        <template v-else-if="showMeaning">
+          <WordDetail :card="card" />
+        </template>
+
+        <template v-else-if="choices.length">
+          <div
+            class="study-choices"
+            :class="{ 'choice-cards': learningChoice }"
+            role="group"
+            aria-label="选择中文释义"
+          >
+            <span v-if="learningChoice" class="choice-announcement" role="status">
+              {{ correctFeedback ? "回答正确" : choiceFeedback ? "回答错误，可查看其他选项" : "" }}
+            </span>
+            <div v-for="(choice, index) in choices" :key="choice.text" class="choice-row">
+              <button
+                type="button"
+                :data-result="choiceResult(choice) || (choiceFeedback && isRevealed(choice) ? 'distractor' : undefined)"
+                :disabled="busy || correctFeedback || (choiceFeedback && Boolean(choiceResult(choice)))"
+                :aria-expanded="choiceFeedback ? isRevealed(choice) : undefined"
+                @click="chooseOption(choice)"
+              >
+                <template v-if="learningChoice">
+                  <span class="choice-copy" :class="{ 'is-revealed': isRevealed(choice) }">
+                    <span class="choice-top choice-prompt choice-pos" :aria-hidden="isRevealed(choice)">
+                      {{ choice.pos }}
+                    </span>
+                    <span class="choice-bottom choice-prompt" :aria-hidden="isRevealed(choice)">
+                      {{ choice.meaning }}
+                    </span>
+                    <span class="choice-top choice-answer choice-word" :aria-hidden="!isRevealed(choice)">
+                      {{ choice.term }}
+                    </span>
+                    <span class="choice-bottom choice-answer" :aria-hidden="!isRevealed(choice)">
+                      <span v-if="choice.pos" class="choice-pos">{{ choice.pos }}</span>
+                      {{ choice.meaning }}
+                    </span>
+                  </span>
+                  <span class="choice-mark">
+                    <template v-if="choiceResult(choice)">
+                      <Icon :name="choice.correct ? 'check' : 'close'" :size="16" />
+                      <span class="choice-announcement">{{ choice.correct ? "正确答案" : "错误选项" }}</span>
+                    </template>
+                    <Icon v-else-if="choiceFeedback" class="choice-chevron" name="chevronDown" :size="16" />
+                  </span>
+                </template>
+                <template v-else>
+                  <span class="choice-pos">{{ choice.pos }}</span>
+                  <span>{{ choice.meaning }}</span>
+                </template>
+                <kbd>{{ index + 1 }}</kbd>
+              </button>
+            </div>
+          </div>
+        </template>
+
+        <template v-else>
+          <p v-if="round === 'choice'" class="waiting">释义选项不足，请回想词义后自评。</p>
+        </template>
       </div>
-      <template v-else>
-        <h2 class="term">{{ card.term }}</h2>
-        <p v-if="!unaidedRecall && (card.phonetics?.uk || card.phonetics?.us)" class="phonetic">
-          /{{ card.phonetics.uk || card.phonetics.us }}/
-        </p>
-      </template>
 
       <template v-if="session.phase === 'detail'">
-        <p v-if="selectedChoice && props.mode === 'review'" class="waiting" role="status">
-          {{ session.rating === 3 ? "选对了" : "选错了" }} · {{ selectedChoice }}
-        </p>
-        <WordDetail :card="card" />
-        <div class="stage-actions">
+        <div class="stage-actions" :class="{ 'choice-detail-enter': learningChoice }">
           <button type="button" class="primary big" :disabled="busy" @click="next()">
             下一词 <kbd>空格</kbd>
           </button>
         </div>
       </template>
 
-      <template v-else-if="!meaning">
-        <p class="waiting">此词暂无释义，可以在所属词书中补充。</p>
+      <template v-else-if="!meaning && !choiceFeedback">
         <div class="stage-actions">
           <button type="button" class="ghost" :disabled="busy" @click="advance(skipWord(session))">
             暂跳此词
@@ -368,7 +519,6 @@ function onKey(event) {
       </template>
 
       <template v-else-if="showMeaning">
-        <WordDetail :card="card" />
         <div class="stage-actions">
           <button type="button" class="primary big" :disabled="busy" @click="grade(3)">
             下一词 <kbd>空格</kbd>
@@ -377,42 +527,24 @@ function onKey(event) {
       </template>
 
       <template v-else-if="choices.length">
-        <p v-if="choiceFeedback" class="waiting" role="status">选错了 · 可展开其余选项查看对应单词</p>
-        <div class="study-choices" role="group" aria-label="选择中文释义">
-          <div v-for="(choice, index) in choices" :key="choice.text" class="choice-row">
-            <button
-              type="button"
-              :disabled="busy || (choiceFeedback && (choice.correct || selectedChoice === choice.text))"
-              :aria-expanded="choiceFeedback ? isRevealed(choice) : undefined"
-              @click="chooseOption(choice)"
-            >
-              <kbd>{{ index + 1 }}</kbd>
-              <span class="choice-pos">{{ choice.pos }}</span>
-              <span>{{ choice.meaning }}</span>
-              <Icon
-                v-if="choiceFeedback && !choice.correct && selectedChoice !== choice.text"
-                name="chevronDown"
-                :size="14"
-              />
-            </button>
-            <p v-if="isRevealed(choice)" class="choice-reveal">
-              <strong>{{ choice.term }}</strong>
-              <span>{{ choice.correct ? "正确答案" : selectedChoice === choice.text ? "你的选择" : "其他选项" }}</span>
-            </p>
-          </div>
-        </div>
         <div class="stage-actions">
-          <button v-if="choiceFeedback" type="button" class="primary big" @click="openDetail">
-            查看详情 <kbd>空格</kbd>
+          <button
+            v-if="learningChoice"
+            type="button"
+            class="big choice-action"
+            :class="choiceFeedback ? 'primary' : 'ghost'"
+            :disabled="busy || correctFeedback"
+            @click="choiceFeedback ? openDetail() : grade(1)"
+          >
+            {{ choiceFeedback ? "查看详情" : "看答案" }} <kbd>空格</kbd>
           </button>
           <button v-else type="button" class="ghost" :disabled="busy" @click="grade(1)">
-            看答案 <kbd v-if="props.mode === 'learn'">空格</kbd>
+            看答案
           </button>
         </div>
       </template>
 
       <template v-else>
-        <p v-if="round === 'choice'" class="waiting">释义选项不足，请回想词义后自评。</p>
         <div class="stage-actions">
           <button
             v-for="item in grades"
@@ -423,7 +555,7 @@ function onKey(event) {
             :disabled="busy"
             @click="grade(item.value)"
           >
-            {{ item.label }} <kbd>{{ item.value }}</kbd>
+            {{ item.label }} <kbd>{{ item.key }}</kbd>
           </button>
           <button
             v-if="round === 'choice'"
@@ -436,10 +568,12 @@ function onKey(event) {
     </div>
 
     <div v-else-if="session.phase === 'spelling-ready'" ref="stage" class="stage" tabindex="-1">
-      <h2>本组单词辨识完成</h2>
-      <p class="waiting">完成 {{ progress.done }} 张</p>
+      <div class="stage-content">
+        <h2>本组单词辨识完成</h2>
+        <p class="waiting">完成 {{ progress.done }} 张</p>
+      </div>
       <div class="stage-actions">
-        <button type="button" class="primary big" :disabled="busy" @click="moveTo(startSpelling(session))">
+        <button type="button" class="primary big" :disabled="busy" @click="moveWithCheckpoint(startSpelling(session))">
           开始拼写 <kbd>回车</kbd>
         </button>
         <button type="button" class="ghost" :disabled="busy" @click="skip">
@@ -449,46 +583,48 @@ function onKey(event) {
     </div>
 
     <div v-else-if="session.phase === 'spell' && spellingCard" class="stage">
-      <p class="stage-meta">
-        <span>拼写</span>
-        <span>
-          {{ (session.spelling?.index ?? 0) + 1 }} /
-          {{ session.spelling?.list.length }}
-        </span>
-      </p>
-
-      <div class="senses spell-prompt">
-        <p
-          v-for="(sense, index) in spellingCard.senses"
-          :key="index"
-          class="sense"
-        >
-          <span v-if="sense.pos" class="pos">{{ sense.pos }}</span>
-          <span>{{ sense.text }}</span>
+      <div class="stage-content">
+        <p class="stage-meta">
+          <span>拼写</span>
+          <span>
+            {{ (session.spelling?.index ?? 0) + 1 }} /
+            {{ session.spelling?.list.length }}
+          </span>
         </p>
+
+        <div class="senses spell-prompt">
+          <p
+            v-for="(sense, index) in spellingCard.senses"
+            :key="index"
+            class="sense"
+          >
+            <span v-if="sense.pos" class="pos">{{ sense.pos }}</span>
+            <span>{{ sense.text }}</span>
+          </p>
+        </div>
+
+        <p class="hint">{{ mask(spellingCard.term) }}</p>
+
+        <form class="spell-form" @submit.prevent="submitSpelling">
+          <input
+            ref="spellingInput"
+            v-model="answer"
+            class="spell-input"
+            type="text"
+            autocomplete="off"
+            autocapitalize="off"
+            spellcheck="false"
+            placeholder="输入英文，回车确认"
+            aria-label="拼写英文词条"
+          />
+          <button type="submit" class="primary" :disabled="busy || !answer.trim()">
+            确认
+          </button>
+        </form>
+
+        <p v-if="feedback" class="feedback" role="status">{{ feedback }}</p>
+
       </div>
-
-      <p class="hint">{{ mask(spellingCard.term) }}</p>
-
-      <form class="spell-form" @submit.prevent="submitSpelling">
-        <input
-          ref="spellingInput"
-          v-model="answer"
-          class="spell-input"
-          type="text"
-          autocomplete="off"
-          autocapitalize="off"
-          spellcheck="false"
-          placeholder="输入英文，回车确认"
-          aria-label="拼写英文词条"
-        />
-        <button type="submit" class="primary" :disabled="busy || !answer.trim()">
-          确认
-        </button>
-      </form>
-
-      <p v-if="feedback" class="feedback" role="status">{{ feedback }}</p>
-
       <div class="stage-actions">
         <button type="button" class="ghost" :disabled="busy" @click="skip">
           跳过拼写 <kbd>Esc</kbd>
@@ -497,18 +633,20 @@ function onKey(event) {
     </div>
 
     <div v-else ref="stage" class="stage finished" tabindex="-1">
-      <p class="stage-meta"><span>完成</span></p>
-      <h2>这一轮结束了</h2>
-      <p class="waiting">
-        完成 {{ progress.done }} 张。
-        <template v-if="progress.done < progress.total">
-          {{ progress.total - progress.done }} 张暂无释义，已暂跳。
-        </template>
-        <template v-if="missedCount">
-          拼写错过 {{ missedCount }} 个，会排到下次复习前面。
-        </template>
-        <template v-else-if="spellingComplete">拼写全部正确。</template>
-      </p>
+      <div class="stage-content">
+        <p class="stage-meta"><span>完成</span></p>
+        <h2>这一轮结束了</h2>
+        <p class="waiting">
+          完成 {{ progress.done }} 张。
+          <template v-if="progress.done < progress.total">
+            {{ progress.total - progress.done }} 张暂无释义，已暂跳。
+          </template>
+          <template v-if="missedCount">
+            拼写错过 {{ missedCount }} 个，会排到下次复习前面。
+          </template>
+          <template v-else-if="spellingComplete">拼写全部正确。</template>
+        </p>
+      </div>
       <div class="stage-actions">
         <button type="button" class="primary big" @click="emit('close')">
           回到今日 <kbd>回车</kbd>
@@ -526,7 +664,7 @@ function onKey(event) {
 
 .study-choices button {
   display: grid;
-  grid-template-columns: 24px 32px minmax(0, 1fr);
+  grid-template-columns: 32px minmax(0, 1fr);
   align-items: start;
   gap: 8px;
   min-height: var(--control-height);
@@ -545,35 +683,8 @@ function onKey(event) {
   border-top: 1px solid var(--line);
 }
 
-.choice-row button:disabled[aria-expanded="true"] {
-  opacity: 1;
-}
-
-.choice-reveal {
-  display: flex;
-  align-items: baseline;
-  gap: 10px;
-  margin: 0;
-  padding: 5px 12px 10px 76px;
-  color: var(--muted);
-  overflow-wrap: anywhere;
-}
-
-.choice-reveal strong {
-  color: var(--ink);
-}
-
-.choice-row button > svg {
-  grid-column: 4;
-  align-self: center;
-  color: var(--muted);
-}
-
-.choice-row button[aria-expanded="true"] > svg {
-  transform: rotate(180deg);
-}
-
-.study-choices button:hover:not(:disabled) {
+.study-choices:not(.choice-cards) button:hover:not(:disabled),
+.choice-cards button:not([data-result]):hover:not(:disabled) {
   background: var(--hover);
 }
 
@@ -585,5 +696,161 @@ function onKey(event) {
 .choice-pos {
   font-family: var(--mono);
   color: var(--muted);
+}
+
+.choice-cards {
+  position: relative;
+  gap: 8px;
+  --correct-fill: #eaf6ed;
+  --correct-line: #a5d2b0;
+  --correct-ink: #24623b;
+  --incorrect-fill: #fceeed;
+  --incorrect-line: #e5afaa;
+  --incorrect-ink: #a13b34;
+}
+
+.choice-cards .choice-row + .choice-row {
+  border-top: 0;
+}
+
+.choice-cards button {
+  grid-template-columns: minmax(0, 1fr) 20px;
+  gap: 12px;
+  padding: 9px 12px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-md);
+  background: var(--bg);
+  color: var(--ink);
+  line-height: 1.4;
+  transition: background-color 450ms ease, border-color 450ms ease;
+}
+
+.choice-cards kbd {
+  background: transparent;
+}
+
+.study-choices button,
+.stage-actions button:has(> kbd) {
+  position: relative;
+  padding-inline-end: 52px;
+}
+
+.study button > kbd {
+  position: absolute;
+  inset-inline-end: 12px;
+  top: 50%;
+  margin: 0;
+  transform: translateY(-50%);
+}
+
+.choice-copy {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 3px;
+  min-width: 0;
+}
+
+.choice-top {
+  grid-area: 1 / 1;
+}
+
+.choice-bottom {
+  grid-area: 2 / 1;
+}
+
+.choice-bottom .choice-pos {
+  margin-right: 4px;
+  font-size: 0.9em;
+}
+
+.choice-word {
+  font-weight: 600;
+}
+
+.choice-answer,
+.choice-copy.is-revealed .choice-prompt {
+  opacity: 0;
+  user-select: none;
+  transition: opacity 200ms ease-in;
+}
+
+.choice-prompt,
+.choice-copy.is-revealed .choice-answer {
+  opacity: 1;
+  transition: opacity 300ms ease-out 150ms;
+}
+
+.choice-mark {
+  display: grid;
+  place-items: center;
+  align-self: center;
+  color: var(--muted);
+}
+
+.choice-cards button[aria-expanded="true"] .choice-chevron {
+  transform: rotate(180deg);
+}
+
+.choice-cards button[data-result="correct"] {
+  background: var(--correct-fill);
+  border-color: var(--correct-line);
+}
+
+.choice-cards button[data-result="correct"] :is(.choice-mark, .choice-word) {
+  color: var(--correct-ink);
+}
+
+.choice-cards button:is([data-result="incorrect"], [data-result="distractor"]) {
+  background: var(--incorrect-fill);
+  border-color: var(--incorrect-line);
+}
+
+.choice-cards button:is([data-result="incorrect"], [data-result="distractor"]) :is(.choice-mark, .choice-word) {
+  color: var(--incorrect-ink);
+}
+
+.choice-announcement {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.choice-action {
+  inline-size: 140px;
+  justify-content: center;
+}
+
+.choice-detail-enter {
+  animation: choice-detail-in 320ms ease-out both;
+}
+
+@keyframes choice-detail-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@media (prefers-color-scheme: dark) {
+  .choice-cards {
+    --correct-fill: #1d3428;
+    --correct-line: #486f55;
+    --correct-ink: #b0dbb9;
+    --incorrect-fill: #402625;
+    --incorrect-line: #80534e;
+    --incorrect-ink: #f3b5ad;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .choice-cards button,
+  .choice-cards .choice-copy :is(.choice-prompt, .choice-answer) {
+    transition: none;
+  }
+
+  .choice-detail-enter {
+    animation: none;
+  }
 }
 </style>

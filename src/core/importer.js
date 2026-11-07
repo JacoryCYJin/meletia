@@ -1,5 +1,5 @@
 import Papa from "papaparse";
-import { wordKey } from "./content.js";
+import { definitionOf, parseSenses, wordKey } from "./content.js";
 
 const fieldNames = {
   word: ["单词", "词条", "英文", "word", "term", "front"],
@@ -50,9 +50,18 @@ export function mapRows(data, hasHeader, mapping) {
   );
 }
 
-export function previewImport(rows, cards, filters = {}) {
-  const seen = new Set(cards.map((card) => wordKey(card.term)));
+function definitionKey(definition) {
+  return JSON.stringify(parseSenses(definition).map(({ pos, text }) => [
+    pos.toLowerCase(), text.normalize("NFKC").replace(/\s+/g, " ").trim(),
+  ]));
+}
+
+export function previewImport(rows, cards, filters = {}, resolutions = {}) {
+  const existing = new Map(cards.map((card) => [wordKey(card.term), card]));
+  const candidates = new Map();
   const added = [];
+  const updated = [];
+  const conflicts = [];
   let duplicates = 0;
   let skipped = 0;
 
@@ -66,8 +75,8 @@ export function previewImport(rows, cards, filters = {}) {
       : "";
 
     if (
-      !row.word ||
-      !row.definition ||
+      !wordKey(row.word) ||
+      !String(row.definition ?? "").trim() ||
       (filters.status && row.status !== filters.status) ||
       (filters.source && row.source !== filters.source) ||
       (filters.date && normalizedDate !== filters.date)
@@ -77,14 +86,41 @@ export function previewImport(rows, cards, filters = {}) {
     }
 
     const key = wordKey(row.word);
-    if (seen.has(key)) {
+    if (!candidates.has(key)) {
+      const card = existing.get(key);
+      const versions = card ? [{ definition: definitionOf(card), row: null }] : [];
+      candidates.set(key, {
+        card, versions,
+        seen: new Map(versions.map(({ definition }, index) => [definitionKey(definition), index])),
+        defaultSelected: versions.length - 1,
+      });
+    }
+    const candidate = candidates.get(key);
+    const meaning = definitionKey(row.definition);
+    if (candidate.seen.has(meaning)) {
+      candidate.defaultSelected = candidate.seen.get(meaning);
       duplicates += 1;
       continue;
     }
-
-    seen.add(key);
-    added.push(row);
+    candidate.defaultSelected = candidate.versions.length;
+    candidate.seen.set(meaning, candidate.versions.length);
+    candidate.versions.push({ definition: row.definition, row });
   }
 
-  return { added, duplicates, skipped };
+  for (const [key, { card, versions, defaultSelected }] of candidates) {
+    if (!versions.length) continue;
+    const override = resolutions[key];
+    const requested = Object.hasOwn(resolutions, key) ? Number(override) : defaultSelected;
+    const selected = Number.isInteger(requested) && requested >= 0 && requested < versions.length
+      ? requested : versions.length - 1;
+    if (versions.length > 1) {
+      conflicts.push({ key, term: card?.term ?? versions[0].row.word, card, versions, selected });
+    }
+    const row = versions[selected].row;
+    if (!row) continue;
+    if (card) updated.push({ card, row });
+    else added.push(row);
+  }
+
+  return { added, updated, conflicts, duplicates, skipped };
 }

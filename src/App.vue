@@ -184,7 +184,7 @@ function finish() {
       @keydown="resizeWithKeyboard"
     ></div>
 
-    <main>
+    <main :class="{ 'study-main': session }">
       <div v-if="state.error" class="banner error" role="alert">
         {{ state.error }}
       </div>

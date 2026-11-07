@@ -1,5 +1,5 @@
 <script setup>
-import { computed, reactive, ref, shallowRef } from "vue";
+import { computed, reactive, ref, shallowRef, watch } from "vue";
 import Icon from "../../shared/Icon.vue";
 import {
   hasKnownHeader,
@@ -43,6 +43,7 @@ const bookName = ref("");
 const busy = ref(false);
 const error = ref("");
 const showRaw = ref(false);
+const resolutions = ref(Object.create(null));
 
 const columns = computed(() => Array.from({ length: table.value?.width ?? 0 }, (_, index) => {
   const position = `第 ${index + 1} 列`;
@@ -83,10 +84,14 @@ const preview = computed(() => {
   const existing = destination.value === "new"
     ? []
     : cardsInImportTarget(destination.value);
-  return previewImport(rows.value, existing, filters.value);
+  return previewImport(rows.value, existing, filters.value, resolutions.value);
 });
+watch([destination, rows, filters], () => {
+  resolutions.value = Object.create(null);
+}, { deep: true });
+const importCount = computed(() => (preview.value?.added.length ?? 0) + (preview.value?.updated.length ?? 0));
 const incompleteMapping = computed(() => extraMappings.value.some(({ property, column }) => !property || column < 0));
-const canImport = computed(() => preview.value?.added.length && !incompleteMapping.value &&
+const canImport = computed(() => importCount.value && !incompleteMapping.value &&
   (destination.value !== "new" || bookName.value.trim()));
 
 function addMapping() {
@@ -161,8 +166,11 @@ async function confirm() {
     const target = destination.value === "new"
       ? { name: bookName.value }
       : { bookId: destination.value };
-    const added = await importCards(preview.value.added, target);
-    setNotice(added ? `已导入 ${added} 张卡片。` : "没有新词需要导入。");
+    const updates = preview.value.updated.length;
+    const added = await importCards(rows.value, target, {
+      filters: filters.value, resolutions: resolutions.value,
+    });
+    setNotice(`已新增 ${added} 张卡片，更新 ${updates} 条释义。`);
     emit("close");
   } catch (cause) {
     error.value = String(cause);
@@ -216,7 +224,7 @@ async function confirm() {
         <div v-if="table" class="import-fields">
           <label class="import-field">
             <span>目标词书</span>
-            <select v-model="destination">
+            <select v-model="destination" aria-label="目标词书">
               <option value="new">新建词书</option>
               <option v-for="book in state.books" :key="book.id" :value="book.id">{{ book.name }}</option>
             </select>
@@ -344,6 +352,35 @@ async function confirm() {
             </label>
           </div>
 
+          <section v-if="preview?.conflicts.length" class="import-conflicts" aria-labelledby="import-conflicts-title">
+            <h2 id="import-conflicts-title">选择释义版本</h2>
+            <p class="muted">同一个词有不同释义。每个词选择一个版本，默认采用最后一个导入版本。</p>
+            <fieldset v-for="conflict in preview.conflicts" :key="conflict.key" class="import-conflict">
+              <legend>{{ conflict.term }}</legend>
+              <div class="import-versions">
+                <label
+                  v-for="(version, index) in conflict.versions"
+                  :key="index"
+                  class="import-version"
+                  :class="{ selected: conflict.selected === index }"
+                >
+                  <span>
+                    <input
+                      type="radio"
+                      :name="'import-version-' + conflict.key"
+                      :value="index"
+                      :checked="conflict.selected === index"
+                      @change="resolutions[conflict.key] = $event.target.value"
+                    />
+                    <strong>{{ version.row ? '导入版本 ' + (conflict.card ? index : index + 1) : '当前版本' }}</strong>
+                    <small v-if="conflict.selected === index">将采用</small>
+                  </span>
+                  <span class="import-version-definition">{{ version.definition }}</span>
+                </label>
+              </div>
+            </fieldset>
+          </section>
+
           <section class="import-preview" aria-labelledby="import-preview-title">
             <header>
               <h2 id="import-preview-title">{{ showRaw ? "原始表格" : "导入预览" }}</h2>
@@ -393,7 +430,7 @@ async function confirm() {
               </tbody>
             </table>
             <p v-else class="import-empty muted">
-              {{ preview ? "没有可新增的词条。" : "请为词条和释义分别选择一列。" }}
+              {{ preview?.updated.length ? "释义更新见上方版本选择。" : preview ? "没有可新增的词条。" : "请为词条和释义分别选择一列。" }}
             </p>
           </section>
         </template>
@@ -404,12 +441,12 @@ async function confirm() {
     <footer v-if="fileName" class="import-footer">
       <p class="muted" aria-live="polite">
         <template v-if="preview">
-          新增 {{ preview.added.length }} · 重复 {{ preview.duplicates }} · 跳过 {{ preview.skipped }}
+          新增 {{ preview.added.length }} · 更新 {{ preview.updated.length }} · 重复 {{ preview.duplicates }} · 跳过 {{ preview.skipped }}
         </template>
         <template v-else>请检查文件和字段映射</template>
       </p>
       <button type="button" class="primary" :disabled="busy || !canImport" @click="confirm">
-        {{ busy ? "处理中…" : preview?.added.length ? "导入 " + preview.added.length + " 条" : "导入" }}
+        {{ busy ? "处理中…" : importCount ? "确认导入 " + importCount + " 条" : "导入" }}
       </button>
     </footer>
   </section>

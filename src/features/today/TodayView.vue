@@ -21,6 +21,7 @@ const tasks = computed(() =>
 const reviewTotal = computed(
   () => tasks.value.recall.length + tasks.value.review.length,
 );
+const canLearn = computed(() => Boolean(state.learnCheckpoint || tasks.value.fresh.length));
 
 const books = computed(() =>
   state.books
@@ -45,7 +46,8 @@ const summary = computed(() => {
     parts.push(`${tasks.value.review.length} 个到期`);
   if (tasks.value.fresh.length) parts.push(`${tasks.value.fresh.length} 个新词`);
   if (!parts.length && tasks.value.reviewDeferred) return "已达每日复习上限，还有待复习词。";
-  return parts.length ? `今天有 ${parts.join("，")}。` : "今天的任务做完了。";
+  if (parts.length) return `今天有 ${parts.join("，")}。`;
+  return state.learnCheckpoint ? "还有一组学习待继续。" : "今天的任务做完了。";
 });
 </script>
 
@@ -80,7 +82,7 @@ const summary = computed(() => {
         </button>
       </article>
 
-      <article class="task" :class="{ quiet: !tasks.fresh.length }">
+      <article class="task" :class="{ quiet: !canLearn }">
         <p class="task-label">学习</p>
         <p class="task-count">{{ tasks.fresh.length }}</p>
         <p class="task-hint">
@@ -90,10 +92,10 @@ const summary = computed(() => {
         <button
           type="button"
           class="primary"
-          :disabled="!tasks.fresh.length"
+          :disabled="!canLearn"
           @click="$emit('start', 'learn')"
         >
-          开始学习
+          {{ state.learnCheckpoint ? "继续学习" : "开始学习" }}
         </button>
       </article>
     </div>
