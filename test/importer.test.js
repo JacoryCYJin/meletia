@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { hasKnownHeader, mapRows, parseTable, previewImport, suggestMapping } from "../src/core/importer.js";
+import { newCard } from "../src/core/content.js";
+import { computed, reactive } from "vue";
 
 function parseWords(text) {
   const table = parseTable(text);
@@ -15,13 +17,50 @@ test("Feishu CSV filters full phrases by status, source and date", () => {
   const filters = { status: "未掌握", source: "练习", date: "2026-11-04" };
   const first = previewImport(rows, [], filters);
 
-  assert.equal(first.added[0].word, "make sense");
-  assert.equal(first.added[0].definition, "说得通, 有道理");
-  assert.equal(first.duplicates, 1);
+  assert.equal(first.added[0].word, "MAKE SENSE");
+  assert.equal(first.added[0].definition, "有道理");
+  assert.equal(first.conflicts.length, 1);
+  assert.equal(first.duplicates, 0);
   assert.equal(first.skipped, 2);
 
-  const cards = [{ term: "make sense" }];
-  assert.equal(previewImport(rows, cards, filters).duplicates, 2);
+  const cards = [newCard({ word: "make sense", definition: "有道理" })];
+  const next = previewImport(rows, cards, filters);
+  assert.equal(next.duplicates, 1);
+  assert.equal(next.updated.length, 0);
+  assert.equal(next.conflicts.length, 1);
+});
+
+test("meaning conflicts default to the latest incoming version and allow selecting current or earlier versions", () => {
+  const card = newCard({ word: "contract", definition: "n. 合同" });
+  const rows = [
+    { word: " CONTRACT ", definition: "n. 合同" },
+    { word: "contract", definition: "v. 收缩" },
+    { word: "contract", definition: "v. 收缩" },
+    { word: "contract", definition: "n. 契约" },
+  ];
+  const preview = previewImport(rows, [card]);
+  assert.equal(preview.duplicates, 2);
+  assert.equal(preview.added.length, 0);
+  assert.equal(preview.updated[0].row.definition, "n. 契约");
+  assert.equal(preview.conflicts[0].versions.length, 3);
+  assert.equal(previewImport(rows, [card], {}, { contract: 0 }).updated.length, 0);
+  assert.equal(previewImport(rows, [card], {}, { contract: 1 }).updated[0].row.definition, "v. 收缩");
+  assert.equal(previewImport(rows, [card], {}, { contract: 99 }).updated[0].row.definition, "n. 契约");
+  assert.equal(previewImport(rows, [], {}, { contract: 0 }).added[0].definition, "n. 合同");
+  const latest = newCard({ word: "contract", definition: "n. 契约" });
+  assert.equal(previewImport(rows, [latest]).updated.length, 0);
+});
+
+test("the first version selection immediately refreshes a reactive import preview", () => {
+  const card = newCard({ word: "contract", definition: "合同" });
+  const rows = [{ word: "contract", definition: "契约" }];
+  const resolutions = reactive(Object.create(null));
+  const preview = computed(() => previewImport(rows, [card], {}, resolutions));
+  assert.equal(preview.value.updated.length, 1);
+  resolutions.contract = "0";
+  assert.equal(preview.value.updated.length, 0);
+  resolutions.contract = "1";
+  assert.equal(preview.value.updated.length, 1);
 });
 
 test("plain two-column CSV keeps its first word", () => {

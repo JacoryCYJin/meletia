@@ -1,7 +1,9 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { meaningChoices, newCard } from "../src/core/content.js";
-import { loadLibrary, saveStudyResult, state, undoStudyResult } from "../src/core/library.js";
+import {
+  loadLibrary, saveLearnCheckpoint, saveStudyResult, state, undoStudyResult,
+} from "../src/core/library.js";
 import {
   answerQuestion,
   continueQuestion,
@@ -243,4 +245,53 @@ test("saving and undoing a finished word write the log and due date together, in
   await assert.rejects(undoStudyResult(receipt), /无法返回上一词/);
   assert.equal(state.cards[0].progress.step, 2);
   assert.deepEqual(state.reviews.map(({ rating }) => rating), [2]);
+});
+
+test("learning resumes from a saved answer and advances together with its completion record", async (t) => {
+  const now = new Date("2026-11-06T12:00:00");
+  const card = newCard({ word: "contract", definition: "合同" }, now);
+  let raw = JSON.stringify({
+    version: 6, cards: [card], books: [{ id: "practice", name: "练习", cardIds: [card.id] }], reviews: [],
+  });
+  const storage = globalThis.localStorage;
+  t.after(() => {
+    if (storage) globalThis.localStorage = storage;
+    else delete globalThis.localStorage;
+  });
+  let fail = false;
+  globalThis.localStorage = {
+    getItem: () => raw,
+    setItem: (_key, value) => {
+      if (fail) throw new Error("write failed");
+      raw = value;
+    },
+  };
+
+  await loadLibrary();
+  assert.equal(state.learnCheckpoint, null);
+  const firstAnswer = answerQuestion(createLearnSession(state.cards), 3, { selectedOption: true });
+  await saveLearnCheckpoint({ session: firstAnswer });
+  await loadLibrary();
+  assert.equal(state.learnCheckpoint.session.phase, "detail");
+  const recall = continueQuestion(state.learnCheckpoint.session);
+  assert.equal(currentEntry(recall).round, "recall");
+  await saveLearnCheckpoint({ session: recall });
+  await loadLibrary();
+  assert.equal(currentEntry(state.learnCheckpoint.session).round, "recall");
+
+  const recalled = continueQuestion(answerQuestion(state.learnCheckpoint.session, 3));
+  const complete = () => saveStudyResult(state.cards[0], "learn", 3, now, { session: recalled });
+  fail = true;
+  await assert.rejects(complete(), /write failed/);
+  assert.equal(state.reviews.length, 0);
+  assert.equal(currentEntry(state.learnCheckpoint.session).round, "recall");
+  fail = false;
+  await complete();
+  await loadLibrary();
+  assert.equal(state.learnCheckpoint.session.phase, "spelling-ready");
+  assert.equal(state.reviews.length, 1);
+  await saveLearnCheckpoint({ session: skipSpelling(state.learnCheckpoint.session) });
+  await loadLibrary();
+  assert.equal(state.learnCheckpoint, null);
+  assert.equal(state.reviews.length, 1);
 });

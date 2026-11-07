@@ -3,6 +3,15 @@ export function bookCards(book, cards) {
   return book.cardIds.map((id) => byId.get(id)).filter(Boolean);
 }
 
+export function bookUpdatedText(book) {
+  const date = new Date(book.updatedAt ?? "");
+  if (Number.isNaN(date.getTime())) return "更新时间未记录";
+  return "更新于 " + new Intl.DateTimeFormat("zh-CN", {
+    year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit",
+    hour12: false,
+  }).format(date);
+}
+
 export function isDue(card, now = new Date()) {
   const progress = card.progress;
   return Boolean(

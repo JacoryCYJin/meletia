@@ -253,6 +253,7 @@ function buildBooks(cards, rawBooks, legacy) {
         cardIds: book.cardIds.filter(Boolean),
         active: book.active !== false,
         createdAt: book.createdAt ?? new Date().toISOString(),
+        updatedAt: book.updatedAt ?? null,
       }));
   }
 
@@ -275,6 +276,7 @@ function buildBooks(cards, rawBooks, legacy) {
     cardIds,
     active: true,
     createdAt: new Date().toISOString(),
+    updatedAt: null,
   }));
 }
 
@@ -332,6 +334,7 @@ export function migrateStore(raw, now = new Date()) {
     reviews: Array.isArray(data.reviews)
       ? data.reviews.filter((review) => review?.at && owned.has(review.cardId))
       : [],
+    learnCheckpoint: data.learnCheckpoint ?? null,
     migrated: data.version !== STORE_VERSION,
   };
 }
@@ -343,6 +346,7 @@ export function emptyStore() {
     cards: [],
     books: [],
     reviews: [],
+    learnCheckpoint: null,
     migrated: false,
   };
 }

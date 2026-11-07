@@ -4,15 +4,16 @@ import Icon from "../../shared/Icon.vue";
 import { blankCard, senseLine } from "../../core/content.js";
 import {
   deleteCard,
+  deleteBook,
   saveCard,
   setError,
   setNotice,
   state,
 } from "../../core/library.js";
-import { bookCards, isDue } from "../../core/books.js";
+import { bookCards, bookUpdatedText, isDue } from "../../core/books.js";
 
 const props = defineProps({ book: { type: Object, required: true } });
-defineEmits(["back"]);
+const emit = defineEmits(["back"]);
 
 const cards = computed(() => bookCards(props.book, state.cards));
 
@@ -39,6 +40,37 @@ const isNew = ref(false);
 const tagsText = ref("");
 const busy = ref(false);
 const confirming = ref(false);
+const deleteDialog = ref(null);
+const deleteConfirmation = ref("");
+const deleteError = ref("");
+const deletePhrase = computed(() => `我确定要删除${props.book.name}`);
+
+function openDeleteBook() {
+  deleteConfirmation.value = "";
+  deleteError.value = "";
+  deleteDialog.value.showModal();
+}
+
+function closeDeleteBook(event) {
+  if (state.busy) {
+    event?.preventDefault();
+    return;
+  }
+  deleteDialog.value?.close();
+}
+
+async function removeBook() {
+  if (state.busy || deleteConfirmation.value !== deletePhrase.value) return;
+  const name = props.book.name;
+  try {
+    await deleteBook(props.book.id);
+    deleteDialog.value?.close();
+    setNotice(`已删除「${name}」。`);
+    emit("back");
+  } catch (cause) {
+    deleteError.value = String(cause);
+  }
+}
 
 function statusOf(card) {
   const progress = card.progress;
@@ -183,6 +215,7 @@ async function remove() {
       <button type="button" class="link" @click="$emit('back')">返回词书</button>
       <h1>{{ book.name }}</h1>
       <p class="lede">{{ cards.length }} 张卡片</p>
+      <p class="book-updated">{{ bookUpdatedText(book) }}</p>
     </header>
 
     <div class="toolbar">
@@ -210,7 +243,46 @@ async function remove() {
       <button type="button" class="primary" @click="openNew">
         <Icon name="plus" :size="16" /> 新建
       </button>
+      <button type="button" class="danger" :disabled="state.busy" @click="openDeleteBook">
+        删除词书
+      </button>
     </div>
+
+    <dialog
+      ref="deleteDialog"
+      class="book-delete-dialog"
+      aria-labelledby="book-delete-title"
+      aria-describedby="book-delete-description"
+      @cancel="closeDeleteBook"
+    >
+      <form @submit.prevent="removeBook">
+        <h2 id="book-delete-title">删除「{{ book.name }}」？</h2>
+        <p id="book-delete-description">
+          这会删除词书中的 {{ cards.length }} 张卡片及其复习记录，删除后无法恢复。
+        </p>
+        <label class="field">
+          <span>请输入「{{ deletePhrase }}」以确认删除</span>
+          <input
+            v-model="deleteConfirmation"
+            aria-label="删除确认文字"
+            type="text"
+            autocomplete="off"
+            :spellcheck="false"
+            :disabled="state.busy"
+            autofocus
+          />
+        </label>
+        <p v-if="deleteError" class="feedback" role="alert">{{ deleteError }}</p>
+        <div class="book-delete-actions">
+          <button type="button" :disabled="state.busy" @click="closeDeleteBook">取消</button>
+          <button
+            type="submit"
+            class="danger"
+            :disabled="state.busy || deleteConfirmation !== deletePhrase"
+          >删除词书</button>
+        </div>
+      </form>
+    </dialog>
 
     <ul class="word-list">
       <li v-for="card in rows" :key="card.id">

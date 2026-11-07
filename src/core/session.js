@@ -21,6 +21,47 @@ export function createLearnSession(cards, size = LEARN_GROUP) {
   return createSession(cards, size, "learn", "choice");
 }
 
+export function resumeLearnCheckpoint(checkpoint, cards) {
+  const session = checkpoint?.session;
+  if (session?.mode !== "learn" || !Array.isArray(session.queue) ||
+      !Array.isArray(session.done) || !Number.isInteger(session.total) ||
+      !["card", "choice-feedback", "detail", "spelling-ready", "spell"].includes(session.phase)) {
+    return null;
+  }
+
+  const ids = new Set(cards.map(({ id }) => id));
+  const queue = session.queue.filter((entry) => ids.has(entry?.id));
+  const done = session.done.filter((id) => ids.has(id));
+  const total = session.total - (session.queue.length - queue.length) - (session.done.length - done.length);
+  const next = { ...session, queue, done, total };
+
+  if (session.phase === "spell") {
+    const spelling = session.spelling;
+    if (!Array.isArray(spelling?.list) || !Array.isArray(spelling.missed) ||
+        !Number.isInteger(spelling.index) || spelling.index < 0) return null;
+    const list = spelling.list.filter((id) => ids.has(id));
+    const index = spelling.list.slice(0, spelling.index).filter((id) => ids.has(id)).length;
+    if (index >= list.length) return null;
+    next.spelling = { list, index, missed: spelling.missed.filter((id) => ids.has(id)) };
+    return { session: next };
+  }
+
+  if (!queue.length) {
+    return done.length ? { session: { ...next, phase: "spelling-ready", rating: null } } : null;
+  }
+  if (queue[0].id !== session.queue[0].id) {
+    return { session: { ...next, phase: "card", rating: null } };
+  }
+  if (session.phase === "choice-feedback") {
+    const { choices, selectedChoice } = checkpoint;
+    if (!Array.isArray(choices) || !choices.some((choice) => choice?.text === selectedChoice)) {
+      return { session: { ...next, phase: "detail" } };
+    }
+    return { session: next, choices, selectedChoice };
+  }
+  return { session: next };
+}
+
 export function createReviewSession(cards, size = REVIEW_GROUP) {
   return createSession(cards, size, "review", REVIEW_ROUNDS[0]);
 }
