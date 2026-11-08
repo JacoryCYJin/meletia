@@ -1,12 +1,12 @@
 <script setup>
 import { computed, onMounted, onUnmounted, ref } from "vue";
+import Modal from "../../shared/Modal.vue";
 import Icon from "../../shared/Icon.vue";
 import { blankCard, senseLine } from "../../core/content.js";
 import {
   deleteCard,
   deleteBook,
   saveCard,
-  setError,
   setNotice,
   state,
 } from "../../core/library.js";
@@ -39,6 +39,15 @@ const draft = ref(null);
 const isNew = ref(false);
 const tagsText = ref("");
 const busy = ref(false);
+const editorError = ref("");
+const termError = ref("");
+const discardOpen = ref(false);
+let originalDraft = "";
+const dirty = computed(
+  () =>
+    draft.value &&
+    JSON.stringify([draft.value, tagsText.value]) !== originalDraft,
+);
 const confirming = ref(false);
 const deleteDialog = ref(null);
 const deleteConfirmation = ref("");
@@ -84,10 +93,16 @@ function statusOf(card) {
 const rows = computed(() => {
   const query = search.value.trim().toLowerCase();
   return cards.value
-    .filter((card) => filter.value === "all" || statusOf(card).id === filter.value)
+    .filter(
+      (card) => filter.value === "all" || statusOf(card).id === filter.value,
+    )
     .filter((card) => {
       if (!query) return true;
-      const haystack = [card.term, card.note, ...(card.senses ?? []).map(senseLine)]
+      const haystack = [
+        card.term,
+        card.note,
+        ...(card.senses ?? []).map(senseLine),
+      ]
         .join(" ")
         .toLowerCase();
       return haystack.includes(query);
@@ -106,6 +121,10 @@ function openCard(card) {
   tagsText.value = (card.tags ?? []).join("，");
   isNew.value = false;
   confirming.value = false;
+  editorError.value = "";
+  termError.value = "";
+  discardOpen.value = false;
+  originalDraft = JSON.stringify([draft.value, tagsText.value]);
 }
 
 function openNew() {
@@ -113,11 +132,25 @@ function openNew() {
   tagsText.value = "";
   isNew.value = true;
   confirming.value = false;
+  editorError.value = "";
+  termError.value = "";
+  discardOpen.value = false;
+  originalDraft = JSON.stringify([draft.value, tagsText.value]);
+}
+
+function requestClose() {
+  if (busy.value) return;
+  if (dirty.value) discardOpen.value = true;
+  else close();
 }
 
 function close() {
   draft.value = null;
   confirming.value = false;
+  editorError.value = "";
+  termError.value = "";
+  discardOpen.value = false;
+  originalDraft = JSON.stringify([draft.value, tagsText.value]);
 }
 
 function addSense() {
@@ -149,7 +182,7 @@ async function save() {
   if (!card || busy.value) return;
   const term = card.term.trim();
   if (!term) {
-    setError("词条不能为空。");
+    termError.value = "请输入单词或词组。";
     return;
   }
 
@@ -178,13 +211,15 @@ async function save() {
       .filter(Boolean),
   };
 
+  editorError.value = "";
+  termError.value = "";
   busy.value = true;
   try {
     await saveCard(clean, props.book.id);
     setNotice(isNew.value ? "已加入词书。" : "已保存。");
     close();
   } catch (cause) {
-    setError(cause);
+    editorError.value = "保存失败，请重试。" + String(cause);
   } finally {
     busy.value = false;
   }
@@ -202,7 +237,7 @@ async function remove() {
     setNotice("已删除。");
     close();
   } catch (cause) {
-    setError(cause);
+    editorError.value = "保存失败，请重试。" + String(cause);
   } finally {
     busy.value = false;
   }
@@ -210,12 +245,21 @@ async function remove() {
 </script>
 
 <template>
-  <section class="page">
+  <section class="page library-page">
     <header class="page-head">
-      <button type="button" class="link" @click="$emit('back')">返回词书</button>
-      <h1>{{ book.name }}</h1>
-      <p class="lede">{{ cards.length }} 张卡片</p>
-      <p class="book-updated">{{ bookUpdatedText(book) }}</p>
+      <button type="button" class="link back-link" @click="$emit('back')">
+        <Icon name="arrowLeft" :size="16" /> 返回词书
+      </button>
+      <div class="library-heading">
+        <span class="book-cover"><Icon name="book" :size="28" /></span>
+        <div>
+          <h1>{{ book.name }}</h1>
+          <p class="lede">
+            {{ cards.length }} 个词条<span class="dot-separator">·</span
+            >{{ bookUpdatedText(book) }}
+          </p>
+        </div>
+      </div>
     </header>
 
     <div class="toolbar">
@@ -243,9 +287,24 @@ async function remove() {
       <button type="button" class="primary" @click="openNew">
         <Icon name="plus" :size="16" /> 新建
       </button>
-      <button type="button" class="danger" :disabled="state.busy" @click="openDeleteBook">
-        删除词书
-      </button>
+      <details class="action-menu">
+        <summary class="icon-button" aria-label="词书管理">
+          <Icon name="more" :size="20" />
+        </summary>
+        <div>
+          <button
+            type="button"
+            class="danger"
+            :disabled="state.busy"
+            @click="
+              openDeleteBook();
+              $event.target.closest('details').open = false;
+            "
+          >
+            删除词书
+          </button>
+        </div>
+      </details>
     </div>
 
     <dialog
@@ -258,7 +317,8 @@ async function remove() {
       <form @submit.prevent="removeBook">
         <h2 id="book-delete-title">删除「{{ book.name }}」？</h2>
         <p id="book-delete-description">
-          这会删除词书中的 {{ cards.length }} 张卡片及其复习记录，删除后无法恢复。
+          这会删除词书中的
+          {{ cards.length }} 张卡片及其复习记录，删除后无法恢复。
         </p>
         <label class="field">
           <span>请输入「{{ deletePhrase }}」以确认删除</span>
@@ -272,172 +332,273 @@ async function remove() {
             autofocus
           />
         </label>
-        <p v-if="deleteError" class="feedback" role="alert">{{ deleteError }}</p>
+        <p v-if="deleteError" class="feedback" role="alert">
+          {{ deleteError }}
+        </p>
         <div class="book-delete-actions">
-          <button type="button" :disabled="state.busy" @click="closeDeleteBook">取消</button>
+          <button type="button" :disabled="state.busy" @click="closeDeleteBook">
+            取消
+          </button>
           <button
             type="submit"
-            class="danger"
+            class="destructive"
             :disabled="state.busy || deleteConfirmation !== deletePhrase"
-          >删除词书</button>
+          >
+            {{ state.busy ? "正在删除…" : "删除词书" }}
+          </button>
         </div>
       </form>
     </dialog>
 
+    <div v-if="rows.length" class="list-labels">
+      <span>单词 / 词组</span><span>释义</span><span>学习状态</span>
+    </div>
     <ul class="word-list">
       <li v-for="card in rows" :key="card.id">
         <button type="button" class="word-row" @click="openCard(card)">
           <span class="word-term">{{ card.term }}</span>
-          <span class="word-sense">{{ senseLine(card.senses?.[0] ?? { pos: '', text: '还没有释义' }) }}</span>
+          <span class="word-sense">{{
+            senseLine(card.senses?.[0] ?? { pos: "", text: "还没有释义" })
+          }}</span>
           <span class="badge" :class="`badge-${statusOf(card).id}`">
             {{ statusOf(card).label }}
           </span>
         </button>
       </li>
-      <li v-if="!rows.length" class="word-empty">没有符合条件的词条。</li>
+      <li v-if="!rows.length" class="empty-state">
+        <Icon :name="cards.length ? 'search' : 'book'" :size="30" />
+        <h2>
+          {{
+            !cards.length
+              ? "这本词书还是空的"
+              : search.trim()
+                ? "没有找到这个词"
+                : "这个分类下还没有词条"
+          }}
+        </h2>
+        <p>
+          {{
+            !cards.length
+              ? "手动添加第一个词，或从词书页面导入词表。"
+              : "换一个关键词，或查看全部词条。"
+          }}
+        </p>
+        <button v-if="!cards.length" class="primary" @click="openNew">
+          <Icon name="plus" :size="16" />添加词条</button
+        ><button
+          v-else
+          @click="
+            search = '';
+            filter = 'all';
+          "
+        >
+          查看全部
+        </button>
+      </li>
     </ul>
 
-    <div v-if="draft" class="overlay" @click.self="close">
-      <form class="editor" @submit.prevent="save">
-        <header class="editor-head">
-          <div>
-            <p class="eyebrow">{{ isNew ? "新建词条" : "编辑词条" }}</p>
-            <h2>{{ draft.term || "未命名词条" }}</h2>
-          </div>
-          <button type="button" class="ghost" @click="close">
-            <Icon name="close" :size="16" />
-          </button>
-        </header>
-
-        <div class="editor-body">
-          <label class="field">
-            <span>词条</span>
-            <input v-model="draft.term" type="text" placeholder="单词或词组" />
-          </label>
-
-          <div class="field-row">
-            <label class="field">
-              <span>英式音标</span>
-              <input v-model="draft.phonetics.uk" type="text" placeholder="可选" />
-            </label>
-            <label class="field">
-              <span>美式音标</span>
-              <input v-model="draft.phonetics.us" type="text" placeholder="可选" />
-            </label>
-          </div>
-
-          <fieldset class="field">
-            <legend>释义</legend>
-            <div
-              v-for="(sense, index) in draft.senses"
-              :key="index"
-              class="edit-row"
-            >
-              <input
-                v-model="sense.pos"
-                class="pos-input"
-                type="text"
-                placeholder="词性"
-                aria-label="词性"
-              />
-              <input
-                v-model="sense.text"
-                type="text"
-                placeholder="中文释义"
-                aria-label="中文释义"
-              />
-              <button
-                type="button"
-                class="icon-button"
-                aria-label="删除这条释义"
-                @click="removeSense(index)"
-              >
-                <Icon name="close" :size="14" />
-              </button>
-            </div>
-            <button type="button" class="link" @click="addSense">
-              + 添加义项
-            </button>
-          </fieldset>
-
-          <fieldset class="field">
-            <legend>词组</legend>
-            <div
-              v-for="(phrase, index) in draft.phrases"
-              :key="index"
-              class="edit-row pair"
-            >
-              <input v-model="phrase.text" type="text" placeholder="词组" />
-              <input v-model="phrase.meaning" type="text" placeholder="释义" />
-              <button
-                type="button"
-                class="icon-button"
-                aria-label="删除这个词组"
-                @click="removePhrase(index)"
-              >
-                <Icon name="close" :size="14" />
-              </button>
-            </div>
-            <button type="button" class="link" @click="addPhrase">
-              + 添加词组
-            </button>
-          </fieldset>
-
-          <fieldset class="field">
-            <legend>例句</legend>
-            <div
-              v-for="(example, index) in draft.examples"
-              :key="index"
-              class="edit-row pair"
-            >
-              <input v-model="example.text" type="text" placeholder="英文例句" />
-              <input v-model="example.translation" type="text" placeholder="中文" />
-              <button
-                type="button"
-                class="icon-button"
-                aria-label="删除这个例句"
-                @click="removeExample(index)"
-              >
-                <Icon name="close" :size="14" />
-              </button>
-            </div>
-            <button type="button" class="link" @click="addExample">
-              + 添加例句
-            </button>
-          </fieldset>
-
-          <label class="field">
-            <span>笔记</span>
-            <textarea v-model="draft.note" rows="3" placeholder="记法、易错点、语境" />
-          </label>
-
-          <div class="field-row">
-            <label class="field">
-              <span>标签</span>
-              <input v-model="tagsText" type="text" placeholder="用逗号分隔" />
-            </label>
-            <label class="field">
-              <span>来源</span>
-              <input v-model="draft.source" type="text" placeholder="练习 / 媒体" />
-            </label>
-          </div>
+    <Modal
+      v-if="draft"
+      :title="isNew ? '添加词条' : '编辑词条'"
+      :description="'保存在「' + book.name + '」中'"
+      :busy="busy"
+      wide
+      @close="requestClose"
+    >
+      <div v-if="discardOpen" class="discard-notice" role="alert">
+        <div>
+          <strong>有尚未保存的修改</strong>
+          <p>放弃后，这次修改不会保留。</p>
         </div>
+        <button @click="discardOpen = false">继续编辑</button
+        ><button class="danger" @click="close">放弃修改</button>
+      </div>
+      <form id="word-editor-form" @submit.prevent="save">
+        <fieldset class="editor-fields" :disabled="busy">
+          <div class="editor-sections">
+            <label class="field">
+              <span>单词或词组 <span class="required-label">必填</span></span>
+              <input
+                v-model="draft.term"
+                type="text"
+                placeholder="例如：make sense"
+                aria-label="单词或词组"
+                :aria-invalid="Boolean(termError)"
+                @input="termError = ''"
+                autofocus
+              /><small v-if="termError" class="field-error" role="alert">{{
+                termError
+              }}</small>
+            </label>
 
-        <footer class="editor-foot">
-          <button
-            v-if="!isNew"
-            type="button"
-            class="danger"
-            :disabled="busy"
-            @click="remove"
-          >
-            {{ confirming ? "再点一次确认删除" : "删除" }}
-          </button>
-          <span class="spacer"></span>
-          <button type="button" class="ghost" @click="close">取消</button>
-          <button type="submit" class="primary" :disabled="busy">保存</button>
-        </footer>
+            <div class="field-row">
+              <label class="field">
+                <span>英式音标</span>
+                <input
+                  v-model="draft.phonetics.uk"
+                  type="text"
+                  placeholder="可选"
+                />
+              </label>
+              <label class="field">
+                <span>美式音标</span>
+                <input
+                  v-model="draft.phonetics.us"
+                  type="text"
+                  placeholder="可选"
+                />
+              </label>
+            </div>
+
+            <fieldset class="field editor-group">
+              <legend>释义</legend>
+              <div
+                v-for="(sense, index) in draft.senses"
+                :key="index"
+                class="edit-row"
+              >
+                <input
+                  v-model="sense.pos"
+                  class="pos-input"
+                  type="text"
+                  placeholder="词性"
+                  aria-label="词性"
+                />
+                <input
+                  v-model="sense.text"
+                  type="text"
+                  placeholder="中文释义"
+                  aria-label="中文释义"
+                />
+                <button
+                  type="button"
+                  class="icon-button"
+                  aria-label="删除这条释义"
+                  @click="removeSense(index)"
+                >
+                  <Icon name="close" :size="14" />
+                </button>
+              </div>
+              <button type="button" class="ghost add-field" @click="addSense">
+                <Icon name="plus" :size="15" />添加义项
+              </button>
+            </fieldset>
+
+            <fieldset class="field">
+              <legend>词组</legend>
+              <div
+                v-for="(phrase, index) in draft.phrases"
+                :key="index"
+                class="edit-row pair"
+              >
+                <input v-model="phrase.text" type="text" placeholder="词组" />
+                <input
+                  v-model="phrase.meaning"
+                  type="text"
+                  placeholder="释义"
+                />
+                <button
+                  type="button"
+                  class="icon-button"
+                  aria-label="删除这个词组"
+                  @click="removePhrase(index)"
+                >
+                  <Icon name="close" :size="14" />
+                </button>
+              </div>
+              <button type="button" class="ghost add-field" @click="addPhrase">
+                <Icon name="plus" :size="15" />添加词组
+              </button>
+            </fieldset>
+
+            <fieldset class="field">
+              <legend>例句</legend>
+              <div
+                v-for="(example, index) in draft.examples"
+                :key="index"
+                class="edit-row pair"
+              >
+                <input
+                  v-model="example.text"
+                  type="text"
+                  placeholder="英文例句"
+                />
+                <input
+                  v-model="example.translation"
+                  type="text"
+                  placeholder="中文"
+                />
+                <button
+                  type="button"
+                  class="icon-button"
+                  aria-label="删除这个例句"
+                  @click="removeExample(index)"
+                >
+                  <Icon name="close" :size="14" />
+                </button>
+              </div>
+              <button type="button" class="ghost add-field" @click="addExample">
+                <Icon name="plus" :size="15" />添加例句
+              </button>
+            </fieldset>
+
+            <label class="field">
+              <span>笔记</span>
+              <textarea
+                v-model="draft.note"
+                rows="3"
+                placeholder="记法、易错点、语境"
+              />
+            </label>
+
+            <div class="field-row">
+              <label class="field">
+                <span>标签</span>
+                <input
+                  v-model="tagsText"
+                  type="text"
+                  placeholder="用逗号分隔"
+                />
+              </label>
+              <label class="field">
+                <span>来源</span>
+                <input
+                  v-model="draft.source"
+                  type="text"
+                  placeholder="练习 / 媒体"
+                />
+              </label>
+            </div>
+          </div>
+        </fieldset>
       </form>
-    </div>
+      <template #footer
+        ><p v-if="editorError" class="field-error" role="alert">
+          {{ editorError }}
+        </p>
+        <button
+          v-if="!isNew"
+          type="button"
+          class="danger"
+          :disabled="busy"
+          @click="remove"
+        >
+          {{ confirming ? "确认删除此词" : "删除词条" }}</button
+        ><span class="spacer" /><button
+          type="button"
+          :disabled="busy"
+          @click="requestClose"
+        >
+          取消</button
+        ><button
+          type="submit"
+          form="word-editor-form"
+          class="primary"
+          :disabled="busy"
+        >
+          {{ busy ? "正在保存…" : "保存词条" }}
+        </button></template
+      >
+    </Modal>
   </section>
 </template>

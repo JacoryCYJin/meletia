@@ -32,8 +32,9 @@ export function dayTasks(cards, books, settings, now = new Date(), reviews = [])
   ).length;
   const allowance = Math.max(0, settings.dailyNew - learnedToday);
   const fresh = freshQueue(books, cards, allowance);
+  const extraFresh = freshQueue(books, cards, settings.groupSize);
 
-  return { recall, review, fresh, allowance, reviewDeferred };
+  return { recall, review, fresh, extraFresh, allowance, reviewDeferred };
 }
 
 export function todayLabel(cards, reviews, now = new Date()) {

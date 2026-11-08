@@ -1,0 +1,9 @@
+{
+  "identifier": "main-window",
+  "description": "允许在顶部窗口区域拖动与双击缩放主窗口。",
+  "windows": ["main"],
+  "permissions": [
+    "core:window:allow-start-dragging",
+    "core:window:allow-internal-toggle-maximize"
+  ]
+}
