@@ -101,6 +101,33 @@ test("daily review allowance counts distinct completed reviews and gives recall 
   assert.equal(unlimited.review.length, 2);
 });
 
+test("extra learning stays available after the daily goal without changing settings or review tasks", () => {
+  const cards = [
+    card("done", { stage: "reviewing", introducedOn: localDay(now), dueAt: day(2).toISOString() }),
+    card("a"), card("b"), card("c"), card("inactive"),
+    card("due", { stage: "reviewing", dueAt: day(-1).toISOString() }),
+  ];
+  const books = [book(["done", "a", "c", "due"]),
+    { ...book(["b"]), id: "second" },
+    { ...book(["inactive"]), id: "off", active: false }];
+  const preferences = { dailyNew: 1, groupSize: 2 };
+  const tasks = dayTasks(cards, books, preferences, now);
+  assert.equal(tasks.allowance, 0);
+  assert.deepEqual(tasks.fresh, []);
+  assert.deepEqual(tasks.extraFresh, ["a", "b"]);
+  assert.deepEqual(tasks.review.map(item => item.id), ["due"]);
+  assert.deepEqual(preferences, { dailyNew: 1, groupSize: 2 });
+
+  cards[1].progress = { ...cards[1].progress, stage: "reviewing", introducedOn: localDay(now) };
+  assert.deepEqual(dayTasks(cards, books, preferences, now).extraFresh, ["c", "b"]);
+});
+
+test("extra learning stops only when active books have no new words", () => {
+  const cards = [card("done", { stage: "reviewing" }), card("inactive")];
+  const books = [book(["done"]), { ...book(["inactive"]), id: "off", active: false }];
+  assert.deepEqual(dayTasks(cards, books, settings, now).extraFresh, []);
+});
+
 test("streak counts back from today and forgives a day that just started", () => {
   const reviews = [
     { at: day(0).toISOString() },

@@ -1,11 +1,17 @@
 <script setup>
 import { computed, nextTick, onMounted, onUnmounted, ref } from "vue";
 import {
-  createBook, mergeBooks, previewBookMerge, setError, setNotice,
-  state, updateBook,
+  createBook,
+  mergeBooks,
+  previewBookMerge,
+  setError,
+  setNotice,
+  state,
+  updateBook,
 } from "../../core/library.js";
 import { bookStats, bookUpdatedText } from "../../core/books.js";
 import Icon from "../../shared/Icon.vue";
+import Modal from "../../shared/Modal.vue";
 import ImportView from "../import/ImportView.vue";
 
 const emit = defineEmits(["open-book"]);
@@ -36,6 +42,10 @@ const groups = computed(() => [
 const newName = ref("");
 const creating = ref(false);
 const pending = ref(false);
+const formError = ref("");
+const mergeBook = computed(() =>
+  state.books.find((book) => book.id === mergeSource.value),
+);
 const importDialog = ref(null);
 const importOpen = ref(false);
 const mergeSource = ref("");
@@ -45,7 +55,8 @@ const mergePriority = ref("source");
 const mergeName = ref("");
 const mergePreview = computed(() => {
   if (!mergeSource.value || !mergeOther.value) return null;
-  const sourceFirst = mergeMode.value === "new" && mergePriority.value === "source";
+  const sourceFirst =
+    mergeMode.value === "new" && mergePriority.value === "source";
   const [first, second] = sourceFirst
     ? [mergeSource.value, mergeOther.value]
     : [mergeOther.value, mergeSource.value];
@@ -68,6 +79,7 @@ function cancelImport(event) {
 }
 
 function openMerge(book) {
+  formError.value = "";
   mergeSource.value = book.id;
   mergeOther.value = "";
   mergeMode.value = "existing";
@@ -77,13 +89,14 @@ function openMerge(book) {
 
 async function saveNewBook() {
   if (!newName.value.trim() || pending.value) return;
+  formError.value = "";
   pending.value = true;
   try {
     await createBook(newName.value);
     newName.value = "";
     creating.value = false;
   } catch (cause) {
-    setError(cause);
+    formError.value = String(cause);
   } finally {
     pending.value = false;
   }
@@ -104,7 +117,7 @@ async function confirmMerge() {
     setNotice(`已合并到「${book.name}」。`);
     emit("open-book", book.id);
   } catch (cause) {
-    setError(cause);
+    formError.value = String(cause);
   } finally {
     pending.value = false;
   }
@@ -128,30 +141,252 @@ async function toggle(book) {
 </script>
 
 <template>
-  <section class="page">
-    <header class="page-head">
-      <p class="eyebrow">词书</p>
-      <h1>{{ state.books.length }} 本词书</h1>
-      <p class="lede">
-        同时启用的词书会轮流取新词。不同词书导入的同词卡片各自记录进度。
-      </p>
+  <section class="page books-page">
+    <header class="page-head page-head-actions">
+      <div>
+        <h1>
+          词书 <span class="heading-count">{{ books.length }}</span>
+        </h1>
+        <p class="lede">分开整理词条，各自记录学习进度。</p>
+      </div>
+      <div class="actions">
+        <button type="button" :disabled="state.busy" @click="openImport">
+          <Icon name="import" :size="18" />导入词表</button
+        ><button
+          type="button"
+          class="primary"
+          :disabled="state.busy"
+          @click="
+            creating = true;
+            newName = '';
+            formError = '';
+          "
+        >
+          <Icon name="plus" :size="18" />新建词书
+        </button>
+      </div>
     </header>
-
-    <p class="muted">{{ activeCount }} 本启用中</p>
-
-    <div class="book-actions">
-      <button v-if="!creating" type="button" class="primary" @click="creating = true">
-        <Icon name="plus" :size="16" /> 新建词书
-      </button>
-      <form v-else class="book-create" @submit.prevent="saveNewBook">
-        <input v-model="newName" aria-label="词书名称" placeholder="词书名称" :disabled="pending" />
-        <button class="primary" :disabled="pending || !newName.trim()">创建</button>
-        <button type="button" :disabled="pending" @click="creating = false">取消</button>
-      </form>
-      <button type="button" :disabled="state.busy" @click="openImport">
-        <Icon name="import" :size="16" /> 导入词表
+    <div v-if="books.length" class="section-line">
+      <h2>我的词书</h2>
+      <span>{{ activeCount }} 本参与每日学习</span>
+    </div>
+    <section v-for="group in groups" :key="group.label" class="book-group">
+      <template v-if="group.books.length"
+        ><h2 v-if="group.label === '旧分组'">旧分组</h2>
+        <ul class="book-list">
+          <li
+            v-for="{ book, stats } in group.books"
+            :key="book.id"
+            class="book-item"
+          >
+            <div class="book-item-head">
+              <button
+                class="book-open"
+                @click="emit('open-book', book.id)"
+                :disabled="state.busy"
+              >
+                <span class="book-cover"><Icon name="book" :size="26" /></span
+                ><span
+                  ><strong>{{ book.name }}</strong
+                  ><small>{{ bookUpdatedText(book) }}</small></span
+                ><Icon name="arrowRight" :size="18" />
+              </button>
+              <div class="book-item-controls">
+                <button
+                  v-if="book.legacy"
+                  class="ghost"
+                  :disabled="state.busy"
+                  @click="convertLegacy(book)"
+                >
+                  转为词书</button
+                ><button
+                  v-if="books.length > 1"
+                  class="ghost"
+                  :disabled="state.busy"
+                  @click="openMerge(book)"
+                >
+                  合并</button
+                ><button
+                  class="toggle"
+                  :class="{ on: book.active }"
+                  :aria-pressed="book.active"
+                  :disabled="state.busy"
+                  @click="toggle(book)"
+                >
+                  <span class="switch-track"><i /></span
+                  >{{ book.active ? "已启用" : "已停用" }}
+                </button>
+              </div>
+            </div>
+            <div class="book-progress-copy">
+              <span>{{ stats.learned }} / {{ stats.total }} 已学</span
+              ><span
+                >{{ stats.fresh }} 个待学<template v-if="stats.due">
+                  · {{ stats.due }} 个到期</template
+                ><template v-if="stats.recall">
+                  · {{ stats.recall }} 个待回炉</template
+                ></span
+              >
+            </div>
+            <div
+              class="meter"
+              role="progressbar"
+              :aria-label="book.name + '学习进度'"
+              :aria-valuenow="stats.learned"
+              :aria-valuemin="0"
+              :aria-valuemax="stats.total || 1"
+            >
+              <span
+                :style="{
+                  width:
+                    (stats.total ? (stats.learned / stats.total) * 100 : 0) +
+                    '%',
+                }"
+              />
+            </div>
+          </li>
+        </ul>
+      </template>
+    </section>
+    <div v-if="!books.length" class="empty-state">
+      <Icon name="book" :size="32" />
+      <h2>从第一本词书开始</h2>
+      <p>导入已有词表，或创建一本空词书，慢慢收集想记住的词。</p>
+      <button class="primary" @click="openImport">
+        <Icon name="import" :size="18" />导入词表
       </button>
     </div>
+    <p v-else class="section-note">
+      启用多本词书时，新词会交替安排。同一个词在不同词书中独立记录进度。
+    </p>
+
+    <Modal
+      v-if="creating"
+      title="新建词书"
+      description="给这本词书起个容易找到的名字。"
+      :busy="pending"
+      @close="creating = false"
+    >
+      <form id="create-book-form" @submit.prevent="saveNewBook">
+        <label class="field"
+          ><span>词书名称</span
+          ><input
+            v-model="newName"
+            aria-label="词书名称"
+            placeholder="例如：阅读中遇到的词"
+            maxlength="120"
+            :disabled="pending"
+            autofocus
+            required
+        /></label>
+        <p v-if="formError" class="field-error" role="alert">{{ formError }}</p>
+      </form>
+      <template #footer
+        ><button :disabled="pending" @click="creating = false">取消</button
+        ><button
+          class="primary"
+          form="create-book-form"
+          :disabled="pending || !newName.trim()"
+        >
+          {{ pending ? "正在创建…" : "创建词书" }}
+        </button></template
+      >
+    </Modal>
+    <Modal
+      v-if="mergeBook"
+      wide
+      title="合并词书"
+      :description="'将「' + mergeBook.name + '」与另一本词书合并。'"
+      :busy="pending"
+      @close="mergeSource = ''"
+    >
+      <form
+        id="merge-book-form"
+        class="stack-form merge-form"
+        @submit.prevent="confirmMerge"
+      >
+        <label class="field"
+          ><span>合并方式</span
+          ><select v-model="mergeMode" :disabled="pending">
+            <option value="existing">合入已有词书</option>
+            <option value="new">合为一本新词书</option>
+          </select></label
+        >
+        <label class="field"
+          ><span>{{ mergeMode === "new" ? "另一本词书" : "合入哪本词书" }}</span
+          ><select v-model="mergeOther" :disabled="pending" required>
+            <option value="">选择词书</option>
+            <option
+              v-for="other in state.books.filter((b) => b.id !== mergeSource)"
+              :key="other.id"
+              :value="other.id"
+            >
+              {{ other.name }}
+            </option>
+          </select></label
+        >
+        <template v-if="mergeMode === 'new'"
+          ><label class="field"
+            ><span>新词书名称</span
+            ><input
+              v-model="mergeName"
+              :disabled="pending"
+              required
+              placeholder="合并后的词书名称" /></label
+          ><label class="field"
+            ><span>重复词优先保留</span
+            ><select v-model="mergePriority" :disabled="pending">
+              <option value="source">{{ mergeBook.name }}</option>
+              <option value="other">
+                {{
+                  state.books.find((b) => b.id === mergeOther)?.name ||
+                  "另一本词书"
+                }}
+              </option>
+            </select></label
+          ></template
+        >
+        <div v-if="mergePreview" class="result-summary">
+          <h3>合并预览</h3>
+          <dl>
+            <div>
+              <dt>移入</dt>
+              <dd>{{ mergePreview.moved }} 个词</dd>
+            </div>
+            <div>
+              <dt>重复</dt>
+              <dd>{{ mergePreview.duplicates.size }} 个词</dd>
+            </div>
+            <div>
+              <dt>合并后</dt>
+              <dd>{{ mergePreview.cardIds.length }} 个词</dd>
+            </div>
+          </dl>
+          <p>
+            重复词保留「{{ mergePreview.primary.name }}」的释义和进度。{{
+              mergeMode === "new"
+                ? "原来的两本词书将被移除。"
+                : "「" + mergeBook.name + "」将被移除。"
+            }}
+          </p>
+        </div>
+        <p v-if="formError" class="field-error" role="alert">{{ formError }}</p>
+      </form>
+      <template #footer
+        ><button :disabled="pending" @click="mergeSource = ''">取消</button
+        ><button
+          class="primary"
+          form="merge-book-form"
+          :disabled="
+            pending ||
+            !mergePreview ||
+            (mergeMode === 'new' && !mergeName.trim())
+          "
+        >
+          {{ pending ? "正在合并…" : "确认合并" }}
+        </button></template
+      >
+    </Modal>
     <dialog
       ref="importDialog"
       class="import-dialog"
@@ -161,99 +396,5 @@ async function toggle(book) {
     >
       <ImportView v-if="importOpen" @close="closeImport" />
     </dialog>
-
-    <section v-for="group in groups" :key="group.label" class="book-group">
-      <template v-if="group.books.length">
-        <h2>{{ group.label }}</h2>
-        <ul class="book-list">
-          <li v-for="{ book, stats } in group.books" :key="book.id" class="book-item">
-            <div class="book-item-head">
-              <div>
-                <button
-                  type="button"
-                  class="link book-title"
-                  :disabled="state.busy"
-                  @click="emit('open-book', book.id)"
-                >
-                  {{ book.name }}
-                </button>
-                <p class="muted">
-                  {{ stats.total }} 张 · 已学 {{ stats.learned }} · 待学
-                  {{ stats.fresh }}
-                  <template v-if="stats.due"> · {{ stats.due }} 到期</template>
-                  <template v-if="stats.recall">
-                    · {{ stats.recall }} 回炉
-                  </template>
-                </p>
-                <p class="book-updated">{{ bookUpdatedText(book) }}</p>
-              </div>
-              <button
-                type="button"
-                class="toggle"
-                :class="{ on: book.active }"
-                :aria-pressed="book.active"
-                :disabled="state.busy"
-                @click="toggle(book)"
-              >
-                {{ book.active ? "启用中" : "已停用" }}
-              </button>
-            </div>
-            <div class="meter">
-              <span
-                :style="{
-                  width: `${stats.total ? (stats.learned / stats.total) * 100 : 0}%`,
-                }"
-              ></span>
-            </div>
-            <div v-if="book.legacy || books.length > 1" class="book-actions">
-              <button v-if="book.legacy" type="button" class="ghost" :disabled="state.busy" @click="convertLegacy(book)">转为我的词书</button>
-              <button v-if="books.length > 1" type="button" class="ghost" :disabled="state.busy" @click="openMerge(book)">合并</button>
-            </div>
-            <form v-if="mergeSource === book.id" class="book-merge" @submit.prevent="confirmMerge">
-              <div class="filters">
-                <label>
-                  <span>合并方式</span>
-                  <select v-model="mergeMode" :disabled="pending">
-                    <option value="existing">合入已有词书</option>
-                    <option value="new">合为新词书</option>
-                  </select>
-                </label>
-                <label>
-                  <span>{{ mergeMode === "new" ? "另一本词书" : "目标词书" }}</span>
-                  <select v-model="mergeOther" :disabled="pending">
-                    <option value="">选择词书</option>
-                    <option v-for="other in state.books.filter((item) => item.id !== book.id)" :key="other.id" :value="other.id">
-                      {{ other.name }}
-                    </option>
-                  </select>
-                </label>
-                <template v-if="mergeMode === 'new' && mergeOther">
-                  <label>
-                    <span>新词书名称</span>
-                    <input v-model="mergeName" :disabled="pending" />
-                  </label>
-                  <label>
-                    <span>同词优先保留</span>
-                    <select v-model="mergePriority" :disabled="pending">
-                      <option value="source">{{ book.name }}</option>
-                      <option value="other">{{ state.books.find((item) => item.id === mergeOther)?.name }}</option>
-                    </select>
-                  </label>
-                </template>
-              </div>
-              <template v-if="mergePreview">
-                <p>从「{{ mergePreview.secondary.name }}」移入 {{ mergePreview.moved }} 张，重复 {{ mergePreview.duplicates.size }} 张，合并后共 {{ mergePreview.cardIds.length }} 张。</p>
-                <p class="muted">同词保留「{{ mergePreview.primary.name }}」的释义和进度。{{ mergeMode === "new" ? "原来的两本词书将被移除。" : `「${book.name}」将被移除。` }}</p>
-              </template>
-              <div class="book-actions">
-                <button class="primary" :disabled="pending || !mergePreview || (mergeMode === 'new' && !mergeName.trim())">确认合并</button>
-                <button type="button" :disabled="pending" @click="mergeSource = ''; mergeOther = ''">取消</button>
-              </div>
-            </form>
-          </li>
-        </ul>
-      </template>
-    </section>
-    <p v-if="!books.length" class="muted">还没有词书。可以先创建一本，也可以在导入时创建。</p>
   </section>
 </template>
