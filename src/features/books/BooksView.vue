@@ -14,7 +14,7 @@ import Icon from "../../shared/Icon.vue";
 import Modal from "../../shared/Modal.vue";
 import ImportView from "../import/ImportView.vue";
 
-const emit = defineEmits(["open-book"]);
+const emit = defineEmits(["open-book", "csv-preview", "trash"]);
 
 const now = ref(new Date());
 let timer;
@@ -150,6 +150,10 @@ async function toggle(book) {
         <p class="lede">分开整理词条，各自记录学习进度。</p>
       </div>
       <div class="actions">
+        <button type="button" class="open-trash" :disabled="state.busy" @click="emit('trash')"><Icon name="trash" :size="18" />回收站</button>
+        <button type="button" class="open-csv-preview" :disabled="state.busy" @click="emit('csv-preview')">
+          <Icon name="file" :size="18" />CSV 过目
+        </button>
         <button type="button" :disabled="state.busy" @click="openImport">
           <Icon name="import" :size="18" />导入词表</button
         ><button

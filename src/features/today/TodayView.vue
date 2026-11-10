@@ -56,12 +56,21 @@ const books = computed(() =>
     .sort((a, b) => b.stats.total - a.stats.total),
 );
 
-const dateText = computed(() => {
+const dateParts = computed(() => {
   const current = now.value;
   const weekday = new Intl.DateTimeFormat("zh-CN", {
     weekday: "long",
   }).format(current);
-  return `${current.getMonth() + 1} 月 ${current.getDate()} 日 · ${weekday}`;
+  const year = current.getFullYear();
+  const month = current.getMonth() + 1;
+  const day = current.getDate();
+  return {
+    day,
+    weekday,
+    yearMonth: `${year}年${month}月`,
+    dateTime: `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`,
+    label: `${year}年${month}月${day}日，${weekday}`,
+  };
 });
 
 const summary = computed(() => {
@@ -88,7 +97,13 @@ const summary = computed(() => {
     <header class="page-head">
       <div class="title-line">
         <h1>今日</h1>
-        <span class="page-date">{{ dateText }}</span>
+        <time class="page-date today-date" :datetime="dateParts.dateTime" :aria-label="dateParts.label">
+          <span class="date-day" aria-hidden="true">{{ dateParts.day }}</span>
+          <span class="date-info" aria-hidden="true">
+            <span class="date-week">{{ dateParts.weekday }}</span>
+            <span class="date-month">{{ dateParts.yearMonth }}</span>
+          </span>
+        </time>
       </div>
       <p class="lede">{{ summary }}</p>
     </header>
@@ -244,6 +259,27 @@ const summary = computed(() => {
 </template>
 
 <style scoped>
+.today-page > .page-head { position: relative; }
+.today-date {
+  position: absolute;
+  right: 0;
+  top: 0;
+  margin: 0;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  color: var(--ink);
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+.date-day { font-size: 48px; font-weight: 450; line-height: 1.05; letter-spacing: -2px; }
+.date-info { border-left: 1px solid var(--line-strong); padding-left: 14px; }
+.date-week { display: block; font-size: 14px; line-height: 1.5; color: var(--ink); }
+.date-month { display: block; margin-top: 5px; font-size: 12px; line-height: 1.5; color: var(--muted); }
+@media (max-width: 760px) {
+  .today-page .title-line { flex-direction: row; }
+}
+
 .continue-dialog { background: var(--bg); color: var(--ink); }
 .continue-options { display: grid; }
 .continue-option {

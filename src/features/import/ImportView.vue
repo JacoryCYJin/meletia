@@ -8,12 +8,7 @@ import {
   previewImport,
   suggestMapping,
 } from "../../core/importer.js";
-import {
-  cardsInImportTarget,
-  importCards,
-  setNotice,
-  state,
-} from "../../core/library.js";
+import { cardsInImportTarget, importCards, state } from "../../core/library.js";
 
 const emit = defineEmits(["close"]);
 
@@ -215,12 +210,13 @@ async function confirm() {
     const added = await importCards(rows.value, target, {
       filters: filters.value,
       resolutions: resolutions.value,
+      fileName: fileName.value,
     });
-    setNotice(`已新增 ${added} 张卡片，更新 ${updates} 条释义。`);
     completed.value = {
       added,
       updated: updates,
       duplicates,
+      createdAt: state.importBatches.at(-1)?.createdAt,
       book:
         destination.value === "new"
           ? bookName.value
@@ -261,6 +257,14 @@ async function confirm() {
         <span class="success-symbol"><Icon name="check" :size="30" /></span>
         <h3>词条已保存到「{{ completed.book }}」</h3>
         <p>下次学习时，就可以遇见它们了。</p>
+        <p class="completion-time">
+          导入于
+          {{
+            new Date(completed.createdAt).toLocaleString("zh-CN", {
+              hour12: false,
+            })
+          }}
+        </p>
         <dl class="completion-counts">
           <div>
             <dt>新增</dt>

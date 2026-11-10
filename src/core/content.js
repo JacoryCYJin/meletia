@@ -3,12 +3,13 @@ import { stageForStep, stepForDays } from "./scheduler.js";
 const PART_OF_SPEECH =
   /(?:n|v|vi|vt|adj|adv|prep|pron|conj|det|interj|aux|num|art|abbr)\./gi;
 
-export const STORE_VERSION = 6;
+export const STORE_VERSION = 8;
 
 export const DEFAULT_SETTINGS = {
   dailyNew: 20,
   groupSize: 10,
   dailyReview: null,
+  trashRetentionDays: 7,
 };
 
 export function wordKey(term) {
@@ -134,6 +135,9 @@ export function defaultProgress() {
     introducedOn: null,
     needsRecall: false,
     lapses: 0,
+    masteryStatus: null,
+    studiedAt: null,
+    masteryDays: {},
   };
 }
 
@@ -156,6 +160,7 @@ export function newCard(row, now = new Date()) {
       .map((tag) => tag.trim())
       .filter(Boolean),
     createdAt: now.toISOString(),
+    editedAt: null,
     progress: defaultProgress(),
   };
 }
@@ -182,6 +187,7 @@ export function blankCard(now = new Date()) {
     markedOn: "",
     tags: [],
     createdAt: now.toISOString(),
+    editedAt: null,
     progress: defaultProgress(),
   };
 }
@@ -229,6 +235,7 @@ function normalizeCard(raw, now) {
     markedOn: String(raw.markedOn ?? raw.date ?? "").trim(),
     tags: Array.isArray(raw.tags) ? raw.tags : [],
     createdAt: raw.createdAt ?? now.toISOString(),
+    editedAt: raw.editedAt ?? null,
     progress: normalizeProgress(raw, now),
   };
 }
@@ -323,6 +330,7 @@ export function migrateStore(raw, now = new Date()) {
   return {
     version: STORE_VERSION,
     settings: {
+      trashRetentionDays: Number.isSafeInteger(data.settings?.trashRetentionDays) && data.settings.trashRetentionDays >= 1 && data.settings.trashRetentionDays <= 365 ? data.settings.trashRetentionDays : 7,
       dailyNew: data.settings?.dailyNew ?? DEFAULT_SETTINGS.dailyNew,
       groupSize: data.settings?.groupSize ?? DEFAULT_SETTINGS.groupSize,
       dailyReview: Number.isSafeInteger(data.settings?.dailyReview) && data.settings.dailyReview >= 0
@@ -335,6 +343,8 @@ export function migrateStore(raw, now = new Date()) {
       ? data.reviews.filter((review) => review?.at && owned.has(review.cardId))
       : [],
     learnCheckpoint: data.learnCheckpoint ?? null,
+    importBatches: Array.isArray(data.importBatches) ? data.importBatches : [],
+    trash: Array.isArray(data.trash) ? data.trash : [],
     migrated: data.version !== STORE_VERSION,
   };
 }
@@ -347,6 +357,8 @@ export function emptyStore() {
     books: [],
     reviews: [],
     learnCheckpoint: null,
+    importBatches: [],
+    trash: [],
     migrated: false,
   };
 }

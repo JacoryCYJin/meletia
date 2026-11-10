@@ -1,12 +1,18 @@
 <script setup>
 import { computed, nextTick, onMounted, onUnmounted, ref } from "vue";
+import TrashView from "./features/trash/TrashView.vue";
+import { cleanupTrash } from "./core/library.js";
+import { notify } from "./core/notifications.js";
 import TodayView from "./features/today/TodayView.vue";
 import BooksView from "./features/books/BooksView.vue";
 import LibraryView from "./features/library/LibraryView.vue";
 import InsightsView from "./features/insights/InsightsView.vue";
 import SettingsView from "./features/settings/SettingsView.vue";
 import StudyView from "./features/study/StudyView.vue";
+import BrowseView from "./features/study/BrowseView.vue";
+import CsvPreviewView from "./features/import/CsvPreviewView.vue";
 import Icon from "./shared/Icon.vue";
+import ToastHost from "./shared/ToastHost.vue";
 import { loadLibrary, state } from "./core/library.js";
 
 const tabs = [
@@ -20,6 +26,7 @@ const views = {
   books: BooksView,
   insights: InsightsView,
   settings: SettingsView,
+  trash: TrashView,
 };
 
 const page = ref("today");
@@ -67,7 +74,6 @@ function showRoute(route) {
 function navigate(target, clearMessages = true) {
   if (state.busy) return;
   if (clearMessages) {
-    state.notice = "";
     state.error = "";
   }
   saveScroll();
@@ -96,12 +102,17 @@ function traverseHistory(direction) {
   if (index < 0) return;
   saveScroll();
   navigationIndex.value = index;
-  state.notice = "";
   state.error = "";
   showRoute(navigation.value[index]);
 }
 function openBookPage(bookId) {
   navigate({ page: "books", bookId });
+}
+function openBrowse(bookId) {
+  navigate({ page: "browse", bookId });
+}
+function openCsvPreview() {
+  navigate({ page: "csv-preview", bookId: "" });
 }
 function backToBooks() {
   navigate({ page: "books", bookId: "" }, false);
@@ -126,6 +137,11 @@ const resizing = ref(false);
 const sidebarAnimating = ref(false);
 const sidebarElement = ref(null);
 let sidebarAnimationTimer;
+let trashCleanupTimer;
+async function cleanExpiredTrash() {
+  try { await cleanupTrash(); }
+  catch (cause) { notify.error(`回收站清理失败，请重试。${String(cause.message ?? cause)}`); }
+}
 let dragOffset = 0;
 let dragStartWidth = 220;
 
@@ -150,10 +166,14 @@ onMounted(() => {
   }
   window.addEventListener("resize", measureWindow);
   loadLibrary();
+  trashCleanupTimer = setInterval(cleanExpiredTrash, 60000);
+  window.addEventListener("focus", cleanExpiredTrash);
 });
 onUnmounted(() => {
   window.removeEventListener("resize", measureWindow);
   clearTimeout(sidebarAnimationTimer);
+  clearInterval(trashCleanupTimer);
+  window.removeEventListener("focus", cleanExpiredTrash);
 });
 
 function rememberSidebarWidth() {
@@ -249,7 +269,6 @@ function go(id) {
 
 function start(mode, options = {}) {
   saveScroll();
-  state.notice = "";
   state.error = "";
   extraNew.value = mode === "learn" && options.extraNew === true;
   session.value = mode;
@@ -321,8 +340,8 @@ function finish() {
           v-for="tab in tabs"
           :key="tab.id"
           type="button"
-          :class="{ selected: page === tab.id }"
-          :aria-current="page === tab.id ? 'page' : undefined"
+          :class="{ selected: page === tab.id || (['browse', 'csv-preview', 'trash'].includes(page) && tab.id === 'books') }"
+          :aria-current="page === tab.id || (['browse', 'csv-preview', 'trash'].includes(page) && tab.id === 'books') ? 'page' : undefined"
           :aria-label="tab.label"
           :title="compactSidebar ? tab.label : undefined"
           :disabled="state.busy"
@@ -365,7 +384,7 @@ function finish() {
       @keydown="resizeWithKeyboard"
     ></div>
 
-    <main ref="mainPanel" :class="{ 'study-main': session }">
+    <main ref="mainPanel" :class="{ 'study-main': session || ['browse', 'csv-preview'].includes(page), 'insights-main': !session && page === 'insights' }">
       <div v-if="state.error" class="banner error" role="alert">
         <Icon name="alert" :size="18" /><span>{{
           state.ready ? state.error : "暂时无法载入词书，请重试。"
@@ -387,16 +406,6 @@ function finish() {
           <Icon name="close" :size="16" />
         </button>
       </div>
-      <div v-if="state.notice" class="banner" role="status">
-        <Icon name="check" :size="18" /><span>{{ state.notice }}</span
-        ><button
-          class="icon-button"
-          aria-label="关闭提示"
-          @click="state.notice = ''"
-        >
-          <Icon name="close" :size="16" />
-        </button>
-      </div>
 
       <div
         v-if="!state.ready"
@@ -411,11 +420,14 @@ function finish() {
         <div class="skeleton" />
       </div>
       <StudyView v-else-if="session" :mode="session" :extra-new="extraNew" @close="finish" />
+      <CsvPreviewView v-else-if="page === 'csv-preview'" @close="backToBooks" />
+      <BrowseView v-else-if="page === 'browse' && openBook" :key="openBook.id" :book="openBook" @close="openBookPage(openBook.id)" />
       <LibraryView
         v-else-if="page === 'books' && openBook"
         :key="openBook.id"
         :book="openBook"
         @back="backToBooks"
+        @browse="openBrowse(openBook.id)"
       />
       <component
         :is="view"
@@ -423,7 +435,10 @@ function finish() {
         @start="start"
         @navigate="go"
         @open-book="openBookPage"
+        @csv-preview="openCsvPreview"
+        @trash="navigate({ page: 'trash', bookId: '' })"
       />
     </main>
+    <ToastHost />
   </div>
 </template>
