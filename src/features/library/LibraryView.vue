@@ -1,7 +1,9 @@
 <script setup>
-import { computed, onMounted, onUnmounted, ref } from "vue";
+import { computed, nextTick, onMounted, onUnmounted, ref } from "vue";
 import Modal from "../../shared/Modal.vue";
 import Icon from "../../shared/Icon.vue";
+import ImportBatches from "../import/ImportBatches.vue";
+import RenameBookDialog from "../../shared/RenameBookDialog.vue";
 import { blankCard, senseLine } from "../../core/content.js";
 import {
   deleteCard,
@@ -11,9 +13,10 @@ import {
   state,
 } from "../../core/library.js";
 import { bookCards, bookUpdatedText, isDue } from "../../core/books.js";
+import { todayBrowseCards } from "../../core/browse.js";
 
 const props = defineProps({ book: { type: Object, required: true } });
-const emit = defineEmits(["back"]);
+const emit = defineEmits(["back", "browse"]);
 
 const cards = computed(() => bookCards(props.book, state.cards));
 
@@ -25,6 +28,7 @@ const filters = [
 ];
 
 const now = ref(new Date());
+const browseCount = computed(() => todayBrowseCards(props.book, state.cards, state.importBatches, now.value).length);
 let timer;
 onMounted(() => {
   timer = setInterval(() => {
@@ -34,6 +38,14 @@ onMounted(() => {
 onUnmounted(() => clearInterval(timer));
 
 const search = ref("");
+const batchesOpen = ref(false);
+const renaming = ref(false);
+const bookMenu = ref(null);
+async function closeRename() {
+  renaming.value = false;
+  await nextTick();
+  bookMenu.value?.querySelector("summary")?.focus({ preventScroll: true });
+}
 const filter = ref("all");
 const draft = ref(null);
 const isNew = ref(false);
@@ -48,7 +60,25 @@ const dirty = computed(
     draft.value &&
     JSON.stringify([draft.value, tagsText.value]) !== originalDraft,
 );
-const confirming = ref(false);
+const cardDeleteDialog = ref(null);
+const cardDeleteError = ref("");
+const cardDeleteKeyboard = ref(false);
+const cardDeleteName = computed(() => state.cards.find(card => card.id === draft.value?.id)?.term ?? "");
+let cardDeleteOpener;
+async function openDeleteCard(event) {
+  if (!draft.value || busy.value) return;
+  cardDeleteOpener = event.currentTarget;
+  cardDeleteKeyboard.value = event.detail === 0;
+  cardDeleteError.value = "";
+  await nextTick();
+  cardDeleteDialog.value?.showModal();
+  cardDeleteDialog.value?.querySelector(".cancel-delete-card")?.focus();
+}
+function closeDeleteCard() {
+  if (busy.value) return;
+  cardDeleteDialog.value?.close();
+  cardDeleteOpener?.focus({ preventScroll: true });
+}
 const deleteDialog = ref(null);
 const deleteConfirmation = ref("");
 const deleteError = ref("");
@@ -74,7 +104,7 @@ async function removeBook() {
   try {
     await deleteBook(props.book.id);
     deleteDialog.value?.close();
-    setNotice(`已删除「${name}」。`);
+    setNotice(`「${name}」已移入回收站。`);
     emit("back");
   } catch (cause) {
     deleteError.value = String(cause);
@@ -120,7 +150,7 @@ function openCard(card) {
   draft.value = JSON.parse(JSON.stringify(card));
   tagsText.value = (card.tags ?? []).join("，");
   isNew.value = false;
-  confirming.value = false;
+  cardDeleteError.value = "";
   editorError.value = "";
   termError.value = "";
   discardOpen.value = false;
@@ -131,7 +161,7 @@ function openNew() {
   draft.value = blankCard();
   tagsText.value = "";
   isNew.value = true;
-  confirming.value = false;
+  cardDeleteError.value = "";
   editorError.value = "";
   termError.value = "";
   discardOpen.value = false;
@@ -145,8 +175,9 @@ function requestClose() {
 }
 
 function close() {
+  cardDeleteDialog.value?.close();
   draft.value = null;
-  confirming.value = false;
+  cardDeleteError.value = "";
   editorError.value = "";
   termError.value = "";
   discardOpen.value = false;
@@ -227,17 +258,13 @@ async function save() {
 
 async function remove() {
   if (!draft.value || busy.value) return;
-  if (!confirming.value) {
-    confirming.value = true;
-    return;
-  }
   busy.value = true;
   try {
     await deleteCard(draft.value.id, props.book.id);
-    setNotice("已删除。");
+    setNotice("已移入回收站。");
     close();
   } catch (cause) {
-    editorError.value = "保存失败，请重试。" + String(cause);
+    cardDeleteError.value = "删除失败，请重试。" + String(cause);
   } finally {
     busy.value = false;
   }
@@ -247,9 +274,6 @@ async function remove() {
 <template>
   <section class="page library-page">
     <header class="page-head">
-      <button type="button" class="link back-link" @click="$emit('back')">
-        <Icon name="arrowLeft" :size="16" /> 返回词书
-      </button>
       <div class="library-heading">
         <span class="book-cover"><Icon name="book" :size="28" /></span>
         <div>
@@ -284,14 +308,31 @@ async function remove() {
           <span>{{ counts[item.id] }}</span>
         </button>
       </div>
+      <button
+        type="button"
+        class="browse-today"
+        :disabled="!browseCount || state.busy"
+        :title="browseCount ? '只读浏览今日新增词，不改变学习状态' : '今天暂无新增词'"
+        @click="emit('browse')"
+      >今日过目 · {{ browseCount }}</button>
       <button type="button" class="primary" @click="openNew">
         <Icon name="plus" :size="16" /> 新建
       </button>
-      <details class="action-menu">
+      <details ref="bookMenu" class="action-menu">
         <summary class="icon-button" aria-label="词书管理">
           <Icon name="more" :size="20" />
         </summary>
         <div>
+          <button type="button" :disabled="state.busy" @click="renaming = true; $event.target.closest('details').open = false;">重命名</button>
+          <button
+            type="button"
+            @click="
+              batchesOpen = true;
+              $event.target.closest('details').open = false;
+            "
+          >
+            导入批次
+          </button>
           <button
             type="button"
             class="danger"
@@ -307,6 +348,12 @@ async function remove() {
       </details>
     </div>
 
+    <RenameBookDialog v-if="renaming" :book="book" @close="closeRename" />
+    <ImportBatches
+      v-if="batchesOpen"
+      :book="book"
+      @close="batchesOpen = false"
+    />
     <dialog
       ref="deleteDialog"
       class="book-delete-dialog"
@@ -317,8 +364,7 @@ async function remove() {
       <form @submit.prevent="removeBook">
         <h2 id="book-delete-title">删除「{{ book.name }}」？</h2>
         <p id="book-delete-description">
-          这会删除词书中的
-          {{ cards.length }} 张卡片及其复习记录，删除后无法恢复。
+          词书及其中 {{ cards.length }} 个词条和学习记录将移入回收站，保留 {{ state.settings.trashRetentionDays }} 天，到期后永久删除。
         </p>
         <label class="field">
           <span>请输入「{{ deletePhrase }}」以确认删除</span>
@@ -581,9 +627,9 @@ async function remove() {
           type="button"
           class="danger"
           :disabled="busy"
-          @click="remove"
+          @click="openDeleteCard"
         >
-          {{ confirming ? "确认删除此词" : "删除词条" }}</button
+          删除词条</button
         ><span class="spacer" /><button
           type="button"
           :disabled="busy"
@@ -600,5 +646,41 @@ async function remove() {
         </button></template
       >
     </Modal>
+    <dialog
+      ref="cardDeleteDialog"
+      class="modal card-delete-dialog"
+      role="alertdialog"
+      aria-labelledby="card-delete-title"
+      aria-describedby="card-delete-description"
+      :aria-busy="busy"
+      :data-keyboard="cardDeleteKeyboard"
+      @keydown="cardDeleteKeyboard = true"
+      @pointerdown="cardDeleteKeyboard = false"
+      @cancel.prevent="closeDeleteCard"
+      @keydown.esc.prevent.stop="closeDeleteCard"
+    >
+      <header class="modal-head">
+        <h2 id="card-delete-title">删除「{{ cardDeleteName }}」？</h2>
+        <button type="button" class="icon-button" aria-label="关闭删除确认" :disabled="busy" @click="closeDeleteCard">
+          <Icon name="close" :size="18" />
+        </button>
+      </header>
+      <div class="modal-body">
+        <p id="card-delete-description">词条及其学习记录将移入回收站，保留 {{ state.settings.trashRetentionDays }} 天，到期后永久删除。</p>
+        <p v-if="cardDeleteError" class="field-error" role="alert">{{ cardDeleteError }}</p>
+      </div>
+      <footer class="modal-foot">
+        <button type="button" class="cancel-delete-card" :disabled="busy" @click="closeDeleteCard">取消</button>
+        <button type="button" class="danger" :disabled="busy" @click="remove">{{ busy ? "正在删除…" : "删除词条" }}</button>
+      </footer>
+    </dialog>
   </section>
 </template>
+
+<style scoped>
+.card-delete-dialog { width: min(380px, calc(100% - 32px)); }
+.card-delete-dialog[data-keyboard="false"] button:focus-visible { outline: none; }
+.card-delete-dialog h2 { overflow-wrap: anywhere; }
+.card-delete-dialog .modal-body { color: var(--muted); line-height: 1.7; }
+.card-delete-dialog .field-error { margin-top: 12px; }
+</style>

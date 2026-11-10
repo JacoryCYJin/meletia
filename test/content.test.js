@@ -116,7 +116,7 @@ test("migrating version 4 keeps books, settings and review logs", () => {
   });
 
   assert.equal(store.migrated, true);
-  assert.deepEqual(store.settings, { dailyNew: 30, groupSize: 20, dailyReview: null });
+  assert.deepEqual(store.settings, { dailyNew: 30, groupSize: 20, dailyReview: null, trashRetentionDays: 7 });
   assert.equal(store.books[0].name, "雅思练习生词");
   assert.equal(store.books[0].active, false);
   assert.equal(store.reviews.length, 1);

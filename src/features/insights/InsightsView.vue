@@ -1,8 +1,17 @@
 <script setup>
-import { computed, onMounted, onUnmounted, ref } from "vue";
+import { computed, nextTick, onMounted, onUnmounted, ref } from "vue";
 import { state } from "../../core/library.js";
-import { recentDays, streakOf, todayLabel } from "../../core/stats.js";
+import { streakOf, todayLabel } from "../../core/stats.js";
 import Icon from "../../shared/Icon.vue";
+import LearningCalendar from "./LearningCalendar.vue";
+import ExportStudyStatusDialog from "./ExportStudyStatusDialog.vue";
+const exportOpen = ref(false);
+const exportButton = ref(null);
+async function closeExport() {
+  exportOpen.value = false;
+  await nextTick();
+  exportButton.value?.focus({ preventScroll: true });
+}
 const now = ref(new Date());
 let timer;
 onMounted(() => {
@@ -11,23 +20,22 @@ onMounted(() => {
 onUnmounted(() => clearInterval(timer));
 const streak = computed(() => streakOf(state.reviews, now.value));
 const today = computed(() => todayLabel(state.cards, state.reviews, now.value));
-const days = computed(() => recentDays(state.reviews, now.value, 14));
-const peak = computed(() => Math.max(1, ...days.value.map((d) => d.count)));
 const learned = computed(
   () => state.cards.filter((c) => c.progress.stage !== "new").length,
-);
-const selectedDay = ref("");
-const activeDay = computed(
-  () =>
-    days.value.find((d) => d.day === selectedDay.value) || days.value.at(-1),
 );
 </script>
 <template>
   <section class="page insights-page">
-    <header class="page-head">
+    <header class="page-head insights-header">
+      <div>
       <h1>学习记录</h1>
       <p class="lede">一点一滴，都有迹可循。</p>
+      </div>
+      <button type="button" class="insights-export" ref="exportButton" @click="exportOpen = true">
+        <Icon name="import" :size="16" /> 导出
+      </button>
     </header>
+    <ExportStudyStatusDialog v-if="exportOpen" @close="closeExport" />
     <div class="record-intro">
       <Icon name="history" :size="24" />
       <p>
@@ -59,48 +67,52 @@ const activeDay = computed(
         <dd>{{ state.reviews.length }}<small>次</small></dd>
       </div>
     </dl>
-    <section class="activity-section">
-      <div class="section-line">
-        <h2>最近 14 天</h2>
-        <span>学习与复习评分次数</span>
-      </div>
-      <div
-        v-if="state.reviews.length"
-        class="activity-readout"
-        aria-live="polite"
-      >
-        <span>{{ activeDay?.day }}</span
-        ><strong>{{ activeDay?.count ?? 0 }} 次</strong>
-      </div>
-      <div v-if="state.reviews.length" class="activity-chart">
-        <button
-          v-for="day in days"
-          :key="day.day"
-          class="activity-day"
-          :class="{ active: activeDay?.day === day.day }"
-          :aria-label="`${day.day}，${day.count} 次记录`"
-          :aria-pressed="activeDay?.day === day.day"
-          @click="selectedDay = day.day"
-          @focus="selectedDay = day.day"
-        >
-          <span class="activity-track"
-            ><span
-              class="activity-fill"
-              :class="{ empty: !day.count }"
-              :style="{
-                height: `${Math.max(2, (day.count / peak) * 100)}%`,
-              }" /></span
-          ><span>{{ day.day.slice(5).replace("-", "/") }}</span>
-        </button>
-      </div>
-      <div v-else class="chart-empty">
-        <Icon name="insights" :size="28" />
-        <h3>还没有学习记录</h3>
-        <p>完成第一组学习后，这里会逐日留下你的进度。</p>
-      </div>
-    </section>
+    <LearningCalendar :reviews="state.reviews" :now="now" />
     <p class="section-note">
       统计仅来自本机词书与评分记录，同词在不同词书中独立计算。
     </p>
   </section>
 </template>
+
+<style scoped>
+.insights-page {
+  display: flex;
+  flex-direction: column;
+  gap: clamp(8px, 2vh, 20px);
+  max-width: none;
+}
+.insights-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  margin: 0;
+}
+.insights-export { flex: none; }
+.record-intro { padding: 8px 0; }
+.record-facts { grid-template-columns: repeat(4, minmax(0, 1fr)); padding: 20px 0; margin: 0; }
+.section-note { margin: 0; max-width: none; }
+@media (max-height: 750px), (min-width: 1400px) and (min-aspect-ratio: 2/1) {
+  .insights-page { gap: 4px; }
+  .insights-header h1 { font-size: 24px; line-height: 1.3; }
+  .insights-header .lede { margin-top: 4px; font-size: 12px; line-height: 1.5; }
+  .record-intro { padding: 4px 0; gap: 12px; }
+  .record-intro strong { font-size: 14px; }
+  .record-intro span { font-size: 11px; line-height: 1.5; margin-top: 2px; }
+  .record-facts { padding: 8px 0; gap: 8px; }
+  .record-facts dt { font-size: 11px; }
+  .record-facts dd { margin-top: 4px; font-size: 20px; }
+  .record-facts small { margin-left: 4px; }
+  .section-note { font-size: 11px; line-height: 1.4; }
+}
+@media (max-height: 650px) and (min-width: 1000px) {
+  .insights-page { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; column-gap: 24px; row-gap: 4px; }
+  .insights-header { display: contents; }
+  .insights-header > div { grid-column: 1; grid-row: 1; }
+  .insights-export { grid-column: 3; grid-row: 1; justify-self: end; align-self: start; }
+  .record-intro { grid-column: 2; grid-row: 1; justify-self: center; padding: 0; }
+  .record-facts, .learning-calendar, .section-note { grid-column: 1 / -1; }
+  .record-facts > div { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+  .record-facts dd { margin: 0; }
+}
+</style>

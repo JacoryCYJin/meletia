@@ -59,7 +59,8 @@ button {
   align-items: center;
   gap: 8px;
   height: var(--control-height);
-  border: 1px solid var(--line-strong);
+  /* Ordinary actions are borderless; structural controls opt into their own borders. */
+  border: 1px solid transparent;
   border-radius: 8px;
   background: var(--bg);
   padding: 0 15px;
@@ -68,12 +69,10 @@ button {
   cursor: pointer;
   transition:
     background-color 160ms ease,
-    color 160ms ease,
-    border-color 160ms ease;
+    color 160ms ease;
 }
 button:hover:not(:disabled) {
   background: var(--hover);
-  border-color: var(--faint);
 }
 button:active:not(:disabled) {
   background: var(--selected);
@@ -82,7 +81,6 @@ button:disabled {
   cursor: not-allowed;
   color: var(--faint);
   background: var(--panel);
-  border-color: var(--line);
 }
 button svg {
   flex: none;
@@ -460,6 +458,14 @@ main > * {
   max-width: 1040px;
   margin-inline: auto;
 }
+main.insights-main {
+  overflow: hidden;
+  padding-top: 28px;
+  padding-bottom: 24px;
+}
+@media (max-height: 750px), (min-width: 1400px) and (min-aspect-ratio: 2/1) {
+  main.insights-main { padding: 12px 24px; }
+}
 main.study-main {
   grid-row: 2;
   display: flex;
@@ -531,12 +537,6 @@ main.study-main {
   font-size: 12px;
   margin-top: 24px;
   max-width: 72ch;
-}
-.section-note .text-button {
-  font-size: inherit;
-  margin-inline: 4px;
-  text-decoration: underline;
-  text-underline-offset: 3px;
 }
 .banner {
   display: flex;
@@ -858,10 +858,6 @@ main.study-main {
   color: var(--muted);
   font-variant-numeric: tabular-nums;
 }
-.back-link {
-  margin-bottom: 28px;
-  font-size: 12px;
-}
 .library-heading {
   display: flex;
   align-items: center;
@@ -960,6 +956,17 @@ main.study-main {
 .action-menu > div button {
   width: 100%;
   justify-content: flex-start;
+  background: transparent;
+  border-color: transparent;
+}
+.action-menu > div button:hover:not(:disabled) {
+  background: var(--hover);
+}
+.action-menu > div button.danger:hover:not(:disabled) {
+  background: var(--danger-soft);
+}
+.action-menu > div button:active:not(:disabled) {
+  background: var(--selected);
 }
 .list-labels,
 .word-row {
@@ -1811,17 +1818,6 @@ dialog::backdrop {
   margin-top: 14px;
   min-height: 22px;
 }
-.finished .stage-content {
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
-  align-items: flex-start;
-  padding-bottom: 80px;
-}
-.finished h2 {
-  font-size: 28px;
-  margin-top: 16px;
-}
 .study-main > .banner {
   flex: none;
   margin: 12px 24px 0;
@@ -1953,69 +1949,6 @@ dialog::backdrop {
   font-weight: 400;
   margin-left: 8px;
 }
-.activity-readout {
-  display: flex;
-  gap: 12px;
-  align-items: center;
-  justify-content: flex-end;
-  font-size: 12px;
-  color: var(--muted);
-  margin-block: 20px 8px;
-}
-.activity-readout strong {
-  color: var(--ink);
-  font-weight: 500;
-}
-.activity-chart {
-  display: grid;
-  grid-template-columns: repeat(14, minmax(0, 1fr));
-  gap: 12px;
-  height: 220px;
-}
-.activity-day {
-  display: flex;
-  flex-direction: column;
-  justify-content: flex-end;
-  gap: 12px;
-  height: 100%;
-  border: 0;
-  background: transparent;
-  padding: 0;
-  border-radius: 0;
-  color: var(--faint);
-  font-size: 10px;
-  font-weight: 400;
-}
-.activity-day:hover:not(:disabled) {
-  background: transparent;
-}
-.activity-track {
-  display: flex;
-  align-items: flex-end;
-  flex: 1;
-  width: 100%;
-  min-height: 0;
-  border-bottom: 1px solid var(--line-strong);
-}
-.activity-fill {
-  width: 100%;
-  background: var(--line-strong);
-  border-radius: 3px 3px 0 0;
-  min-height: 2px;
-}
-.activity-day.active .activity-fill,
-.activity-day:hover .activity-fill {
-  background: var(--muted);
-}
-.activity-fill.empty {
-  background: var(--line);
-}
-.chart-empty {
-  color: var(--muted);
-  font-size: 13px;
-  padding: 20px 0;
-}
-
 @media (max-width: 1000px) {
   .settings-layout {
     grid-template-columns: 1fr;
@@ -2195,12 +2128,6 @@ dialog::backdrop {
     grid-template-columns: 1fr 1fr;
     gap: 24px;
   }
-  .activity-chart {
-    gap: 5px;
-  }
-  .activity-day:nth-child(even) > span:last-child {
-    visibility: hidden;
-  }
   .setting-row {
     gap: 16px;
   }
@@ -2254,23 +2181,39 @@ dialog::backdrop {
   outline: none;
 }
 .import-dialog:has(.import-complete) {
-  height: min(470px, calc(100dvh - 40px));
+  width: min(480px, calc(100% - 32px));
+  height: fit-content;
 }
-.chart-empty {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
+.import-dialog:has(.import-complete) .import-page {
+  height: auto;
+  max-height: calc(100dvh - 48px);
+}
+.import-dialog:has(.import-complete) .import-content {
+  flex: 0 1 auto;
+  padding: 20px 24px;
+}
+.import-dialog:has(.import-complete) .import-header {
+  margin-bottom: 12px;
+}
+.import-dialog:has(.import-complete) .import-complete {
+  padding: 0 0 4px;
+}
+.import-dialog:has(.import-complete) .success-symbol {
+  width: 48px;
+  height: 48px;
+  margin-bottom: 8px;
+}
+.import-dialog:has(.import-complete) .completion-counts {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 12px;
-  min-height: 240px;
-  border-block: 1px solid var(--line);
-  text-align: center;
+  margin-top: 16px;
 }
-.chart-empty h3 {
-  color: var(--ink);
+.import-dialog:has(.import-complete) .completion-time {
+  font-size: 12px;
 }
-.chart-empty p {
-  max-width: 38ch;
+.import-dialog:has(.import-complete) .import-footer {
+  padding: 16px 24px;
 }
 .sense > span:last-child,
 .block :is(p, strong, span) {

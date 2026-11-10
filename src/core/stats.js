@@ -83,3 +83,49 @@ export function recentDays(reviews, now = new Date(), length = 14) {
   }
   return days;
 }
+
+export function learningCalendar(reviews, now = new Date()) {
+  // Calendar arithmetic at local noon avoids DST midnight and fixed-hour offsets.
+  const end = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 12);
+  const previousYear = end.getFullYear() - 1;
+  const lastDay = new Date(previousYear, end.getMonth() + 1, 0).getDate();
+  const start = new Date(previousYear, end.getMonth(), Math.min(end.getDate(), lastDay) + 1, 12);
+  const startDay = localDay(start);
+  const endDay = localDay(end);
+  const counts = new Map();
+  for (const entry of reviews) {
+    const date = new Date(entry.at);
+    if (!Number.isFinite(date.getTime())) continue;
+    const key = localDay(date);
+    if (key >= startDay && key <= endDay) counts.set(key, (counts.get(key) ?? 0) + 1);
+  }
+  const cursor = new Date(start);
+  cursor.setDate(cursor.getDate() - cursor.getDay());
+  const weeks = [];
+  const months = [];
+  let previousMonth = "";
+  while (cursor <= end) {
+    const week = [];
+    for (let weekday = 0; weekday < 7; weekday += 1) {
+      const day = localDay(cursor);
+      const inRange = day >= startDay && day <= endDay;
+      const count = inRange ? counts.get(day) ?? 0 : 0;
+      const level = count === 0 ? 0 : count < 10 ? 1 : count < 30 ? 2 : count < 60 ? 3 : 4;
+      week.push({ day, weekday, count, level, inRange });
+      const month = day.slice(0, 7);
+      if (inRange && month !== previousMonth) {
+        if (months.at(-1)?.column === weeks.length) months.pop();
+        months.push({ key: month, label: `${cursor.getMonth() + 1}月`, column: weeks.length });
+        previousMonth = month;
+      }
+      cursor.setDate(cursor.getDate() + 1);
+    }
+    weeks.push(week);
+  }
+  return {
+    start: startDay, end: endDay, weeks,
+    months: months.map((month, index) => ({
+      ...month, span: (months[index + 1]?.column ?? weeks.length) - month.column,
+    })),
+  };
+}

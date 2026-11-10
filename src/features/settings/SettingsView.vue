@@ -1,17 +1,35 @@
 <script setup>
 import { reactive, ref, watch } from "vue";
 import { state, updateSettings } from "../../core/library.js";
+import { notify } from "../../core/notifications.js";
+import { RETENTION_OPTIONS, validRetention } from "../../core/recycle-bin.js";
 import Icon from "../../shared/Icon.vue";
 const values = reactive({ ...state.settings });
 const errors = reactive({});
-const saved = ref("");
 const saving = ref("");
+const retentionChoice = ref(RETENTION_OPTIONS.includes(state.settings.trashRetentionDays) ? state.settings.trashRetentionDays : "custom");
+async function changeRetentionChoice() {
+  if (retentionChoice.value === "custom") return;
+  values.trashRetentionDays = Number(retentionChoice.value);
+  await saveRetention();
+}
+async function saveRetention() {
+  errors.trashRetentionDays = "";
+  const days = Number(values.trashRetentionDays);
+  if (!validRetention(days)) { errors.trashRetentionDays = "请输入 1–365 之间的整数天数。"; return; }
+  if (days === state.settings.trashRetentionDays) return;
+  saving.value = "trashRetentionDays";
+  try {
+    await updateSettings({ trashRetentionDays: days });
+    notify.success(`回收站保留时间已设为 ${days} 天。`);
+  } catch (cause) { errors.trashRetentionDays = "未能保存，请重试。" + String(cause.message ?? cause); }
+  finally { saving.value = ""; }
+}
 watch(
   () => state.settings,
   (settings) => Object.assign(values, settings),
 );
 async function save(key) {
-  saved.value = "";
   errors[key] = "";
   const raw = values[key];
   const value =
@@ -32,7 +50,9 @@ async function save(key) {
   saving.value = key;
   try {
     await updateSettings({ [key]: value });
-    saved.value = key;
+    notify.success(
+      `已保存「${fields.find((field) => field.key === key).label}」。`,
+    );
   } catch (cause) {
     errors[key] = "未能保存，请重试。" + String(cause);
   } finally {
@@ -117,8 +137,6 @@ const fields = [
             </div>
             <span class="save-status" role="status"
               ><template v-if="saving === field.key">正在保存…</template
-              ><template v-else-if="saved === field.key"
-                ><Icon name="check" :size="14" />已保存</template
               ><button
                 v-else-if="errors[field.key]"
                 class="text-button"
@@ -127,6 +145,26 @@ const fields = [
                 重试保存
               </button></span
             >
+          </div>
+        </div>
+        <div class="section-line trash-settings-heading"><h2>回收站</h2><span>修改后自动保存</span></div>
+        <div class="setting-row">
+          <div>
+            <label for="trash-retention">保留时间</label>
+            <p>默认 7 天。仅影响之后删除的项目，已有项目的到期时间保持不变。</p>
+            <p v-if="errors.trashRetentionDays" id="trash-retention-error" class="field-error" role="alert">{{ errors.trashRetentionDays }}</p>
+          </div>
+          <div class="setting-value">
+            <div class="number-unit">
+              <select id="trash-retention" v-model="retentionChoice" :disabled="Boolean(saving)" @change="changeRetentionChoice">
+                <option v-for="days in RETENTION_OPTIONS" :key="days" :value="days">{{ days }} 天{{ days === 7 ? '（默认）' : '' }}</option>
+                <option value="custom">自定义</option>
+              </select>
+            </div>
+            <div v-if="retentionChoice === 'custom'" class="number-unit">
+              <input id="trash-retention-custom" v-model="values.trashRetentionDays" aria-label="自定义回收站保留天数" type="number" min="1" max="365" step="1" :disabled="Boolean(saving)" :aria-invalid="Boolean(errors.trashRetentionDays)" :aria-describedby="errors.trashRetentionDays ? 'trash-retention-error' : undefined" @change="saveRetention" /><span>天</span>
+            </div>
+            <span class="save-status" role="status"><template v-if="saving === 'trashRetentionDays'">正在保存…</template><button v-else-if="errors.trashRetentionDays" type="button" class="text-button" @click="saveRetention">重试保存</button></span>
           </div>
         </div>
       </section>
@@ -139,3 +177,9 @@ const fields = [
     </div>
   </section>
 </template>
+
+<style scoped>
+.trash-settings-heading { margin-top: 40px; }
+#trash-retention { width: 100%; }
+#trash-retention-custom { margin-top: 8px; }
+</style>

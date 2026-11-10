@@ -9,6 +9,8 @@ import {
 } from "vue";
 import Icon from "../../shared/Icon.vue";
 import WordDetail from "../../shared/WordDetail.vue";
+import StudySummary from "./StudySummary.vue";
+import { pendingStudyCards, studySummary } from "../../core/study-summary.js";
 import { definitionOf, meaningChoices } from "../../core/content.js";
 import {
   answerQuestion,
@@ -29,6 +31,7 @@ import {
   cardById,
   saveLearnCheckpoint,
   saveStudyResult,
+  saveStudyAttempt,
   setError,
   state,
   undoStudyResult,
@@ -66,6 +69,10 @@ const correctFeedback = ref(false);
 const busy = ref(false);
 const stage = ref(null);
 const spellingInput = ref(null);
+const summaryNow = ref(new Date());
+const groupIds = ref([]);
+const excludedIds = ref([]);
+let summaryTimer;
 let feedbackTimer;
 let correctFeedbackTimer;
 
@@ -111,11 +118,6 @@ const percent = computed(() => {
 const spellingCard = computed(() =>
   session.value ? cardById(spellTarget(session.value)) : null,
 );
-const missedCount = computed(() => session.value?.spelling?.missed.length ?? 0);
-const spellingComplete = computed(() =>
-  Boolean(session.value?.spelling && !spellTarget(session.value)),
-);
-const stageLabel = computed(() => (props.mode === "learn" ? "学习" : "复习"));
 const choiceFeedback = computed(
   () => session.value?.phase === "choice-feedback",
 );
@@ -130,6 +132,30 @@ const showPrevious = computed(() =>
     session.value?.phase,
   ),
 );
+const skippedIds = computed(() =>
+  groupIds.value.filter((id) => !session.value?.done.includes(id)),
+);
+const summary = computed(() =>
+  studySummary({
+    session: session.value,
+    cards: state.cards,
+    books: state.books,
+    settings: state.settings,
+    reviews: state.reviews,
+    now: summaryNow.value,
+    extraNew: props.extraNew,
+    excludedIds: [...excludedIds.value, ...skippedIds.value],
+  }),
+);
+
+function rememberGroup() {
+  groupIds.value = [
+    ...new Set([
+      ...session.value.done,
+      ...session.value.queue.map((entry) => entry.id),
+    ]),
+  ];
+}
 
 function buildSession() {
   if (props.mode === "learn" && state.learnCheckpoint) {
@@ -137,6 +163,7 @@ function buildSession() {
     session.value = saved.session;
     restoredChoices.value = saved.choices ?? null;
     selectedChoice.value = saved.selectedChoice ?? null;
+    rememberGroup();
     return;
   }
   const tasks = dayTasks(
@@ -148,11 +175,13 @@ function buildSession() {
   );
   if (props.mode === "learn") {
     const cards = (props.extraNew ? tasks.extraFresh : tasks.fresh)
-      .map(cardById).filter(Boolean);
+      .map(cardById)
+      .filter(Boolean);
     session.value = createLearnSession(cards, state.settings.groupSize);
   } else {
     session.value = createReviewSession([...tasks.recall, ...tasks.review]);
   }
+  rememberGroup();
 }
 
 function focusStage(resetScroll = false) {
@@ -168,16 +197,21 @@ onMounted(() => {
   buildSession();
   window.addEventListener("keydown", onKey);
   focusStage();
+  summaryTimer = setInterval(() => {
+    if (session.value?.phase === "finished") summaryNow.value = new Date();
+  }, 30000);
 });
 
 onUnmounted(() => {
   window.removeEventListener("keydown", onKey);
   clearTimeout(feedbackTimer);
   clearTimeout(correctFeedbackTimer);
+  clearInterval(summaryTimer);
 });
 
 function moveTo(next) {
   session.value = next;
+  summaryNow.value = new Date();
   selectedChoice.value = null;
   openedChoices.value = new Set();
   restoredChoices.value = null;
@@ -203,7 +237,7 @@ async function moveWithCheckpoint(next) {
   moveTo(next);
 }
 
-async function advance(next, rating) {
+async function advance(next, rating, positionSaved = false) {
   if (busy.value) return;
 
   const checkpoint = {
@@ -212,7 +246,7 @@ async function advance(next, rating) {
     saved: null,
   };
   if (next.done.length === session.value.done.length) {
-    if (props.mode === "learn" && !(await persistPosition(next))) return;
+    if (props.mode === "learn" && !positionSaved && !(await persistPosition(next))) return;
     previous.value = checkpoint;
     moveTo(next);
     return;
@@ -226,6 +260,7 @@ async function advance(next, rating) {
       entry.value.firstRating ?? rating,
       new Date(),
       props.mode === "learn" ? { session: next } : undefined,
+      { mastered: true },
     );
     previous.value = checkpoint;
     moveTo(next);
@@ -268,14 +303,23 @@ async function grade(value, choice = null) {
   const next = answerQuestion(session.value, value, {
     selectedOption: Boolean(choice),
   });
-  if (showMeaning.value) return advance(continueQuestion(next), value);
-  if (props.mode === "learn") {
-    const details =
-      next.phase === "choice-feedback"
-        ? { choices: choices.value, selectedChoice: choice.text }
-        : undefined;
-    if (!(await persistPosition(next, details))) return;
+  const position = showMeaning.value ? continueQuestion(next) : next;
+  if (position.done.length > session.value.done.length) return advance(position, value);
+  // Updating the card's export status must not regenerate the current choices.
+  restoredChoices.value = choices.value;
+  const details = next.phase === "choice-feedback"
+    ? { choices: choices.value, selectedChoice: choice.text } : {};
+  busy.value = true;
+  try {
+    await saveStudyAttempt(card.value.id, value, new Date(),
+      props.mode === "learn" ? { session: position, ...details } : undefined);
+  } catch (cause) {
+    setError(cause);
+    return;
+  } finally {
+    busy.value = false;
   }
+  if (showMeaning.value) return advance(position, value, true);
   if (learningChoice.value && choice?.correct) {
     selectedChoice.value = choice.text;
     correctFeedback.value = true;
@@ -299,7 +343,7 @@ async function grade(value, choice = null) {
     focusStage(next.phase === "detail");
     return;
   }
-  return advance(next, value);
+  return advance(next, value, true);
 }
 
 function isRevealed(choice) {
@@ -373,7 +417,8 @@ async function submitSpelling() {
         feedback.value = "";
       }, 2400);
     } else {
-      if (props.mode === "learn") await saveLearnCheckpoint({ session: next });
+      await saveStudyAttempt(target.id, 3, new Date(),
+        props.mode === "learn" ? { session: next } : undefined, true);
       feedback.value = "";
     }
 
@@ -391,7 +436,54 @@ async function skip() {
   const next = skipSpelling(session.value);
   if (next === session.value) return;
   if (props.mode === "learn" && !(await persistPosition(next))) return;
+  moveTo(next);
+}
+
+function requestEnd() {
+  if (busy.value) return;
+  if (["spelling-ready", "spell"].includes(session.value?.phase)) return skip();
   emit("close");
+}
+
+async function continueFromSummary() {
+  if (busy.value || session.value?.phase !== "finished") return;
+  busy.value = true;
+  try {
+    const skipped = [...new Set([...excludedIds.value, ...skippedIds.value])];
+    const pending = pendingStudyCards({
+      mode: props.mode,
+      cards: state.cards,
+      books: state.books,
+      settings: state.settings,
+      reviews: state.reviews,
+      now: new Date(),
+      extraNew: props.extraNew,
+      excludedIds: skipped,
+    });
+    const next =
+      props.mode === "learn"
+        ? createLearnSession(pending, state.settings.groupSize)
+        : createReviewSession(pending);
+    if (props.mode === "learn")
+      await saveLearnCheckpoint(next.total ? { session: next } : null);
+    if (!next.total) {
+      emit("close");
+      return;
+    }
+    excludedIds.value = skipped;
+    previous.value = null;
+    answer.value = "";
+    feedback.value = "";
+    correctFeedback.value = false;
+    clearTimeout(feedbackTimer);
+    clearTimeout(correctFeedbackTimer);
+    moveTo(next);
+    rememberGroup();
+  } catch (cause) {
+    setError(cause);
+  } finally {
+    busy.value = false;
+  }
 }
 
 function onKey(event) {
@@ -480,7 +572,7 @@ function onKey(event) {
     moveWithCheckpoint(startSpelling(session.value));
   } else if (phase === "finished" && event.key === "Enter") {
     event.preventDefault();
-    emit("close");
+    continueFromSummary();
   }
 }
 </script>
@@ -488,12 +580,7 @@ function onKey(event) {
 <template>
   <section v-if="session" class="study">
     <header class="study-head">
-      <button
-        type="button"
-        class="ghost"
-        :disabled="busy"
-        @click="emit('close')"
-      >
+      <button type="button" class="ghost" :disabled="busy" @click="requestEnd">
         <Icon name="close" :size="16" /> 结束
       </button>
       <button
@@ -505,16 +592,6 @@ function onKey(event) {
       >
         上一词
       </button>
-      <p class="study-mode">
-        {{ stageLabel
-        }}<span class="study-round">{{
-          session.phase === "spell"
-            ? "拼写"
-            : session.phase === "spelling-ready"
-              ? "本组完成"
-              : roundLabels[round] || "完成"
-        }}</span>
-      </p>
       <div class="study-progress">
         <span>{{ progress.done }} / {{ progress.total }}</span>
         <div class="bar"><span :style="{ width: `${percent}%` }"></span></div>
@@ -862,26 +939,13 @@ function onKey(event) {
       </div>
     </div>
 
-    <div v-else ref="stage" class="stage finished" tabindex="-1">
-      <div class="stage-content">
-        <span class="success-symbol"><Icon name="check" :size="28" /></span>
-        <h2>这一组，完成了</h2>
-        <p class="waiting">
-          完成 {{ progress.done }} 张。
-          <template v-if="progress.done < progress.total">
-            {{ progress.total - progress.done }} 张暂无释义，已暂跳。
-          </template>
-          <template v-if="missedCount">
-            拼写错过 {{ missedCount }} 个，会排到下次复习前面。
-          </template>
-          <template v-else-if="spellingComplete">拼写全部正确。</template>
-        </p>
-      </div>
-      <div class="stage-actions">
-        <button type="button" class="primary big" @click="emit('close')">
-          回到今日 <kbd>回车</kbd>
-        </button>
-      </div>
+    <div v-else ref="stage" class="stage summary-stage" tabindex="-1">
+      <StudySummary
+        :summary="summary"
+        :busy="busy"
+        @continue="continueFromSummary"
+        @close="emit('close')"
+      />
     </div>
   </section>
 </template>
