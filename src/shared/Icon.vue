@@ -32,6 +32,8 @@ const paths = {
   plus: "M12 5v14M5 12h14",
   search: "M11 19a8 8 0 1 0 0-16 8 8 0 0 0 0 16zM21 21l-4.35-4.35",
   check: "M20 6 9 17l-5-5",
+  volume:
+    "M11 5 6 9H3v6h3l5 4V5Zm4.5 2a5 5 0 0 1 0 10m3-13a9 9 0 0 1 0 16",
 };
 
 const d = computed(() => paths[props.name] ?? "");
