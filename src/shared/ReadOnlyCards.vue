@@ -1,6 +1,7 @@
 <script setup>
 import { computed, nextTick, onMounted, onUnmounted, ref, shallowRef } from "vue";
 import { createBrowseSession, moveBrowse } from "../core/browse.js";
+import PronunciationButtons from "./PronunciationButtons.vue";
 import WordDetail from "./WordDetail.vue";
 import Icon from "./Icon.vue";
 
@@ -58,6 +59,7 @@ onUnmounted(() => window.removeEventListener("keydown", onKey));
       <div class="stage-content">
         <template v-if="card">
           <h2 class="term">{{ card.term }}</h2>
+          <PronunciationButtons :text="card.term" :card-key="card.id" />
           <p v-if="card.phonetics?.uk || card.phonetics?.us" class="phonetic">/{{ card.phonetics.uk || card.phonetics.us }}/</p>
           <WordDetail :card="card" />
           <dl v-if="showMetadata && card.previewAttributes?.length" class="preview-metadata">

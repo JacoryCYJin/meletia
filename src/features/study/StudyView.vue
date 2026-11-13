@@ -8,6 +8,7 @@ import {
   shallowRef,
 } from "vue";
 import Icon from "../../shared/Icon.vue";
+import PronunciationButtons from "../../shared/PronunciationButtons.vue";
 import WordDetail from "../../shared/WordDetail.vue";
 import StudySummary from "./StudySummary.vue";
 import { pendingStudyCards, studySummary } from "../../core/study-summary.js";
@@ -632,6 +633,7 @@ function onKey(event) {
         </div>
         <template v-else>
           <h2 class="term">{{ card.term }}</h2>
+          <PronunciationButtons :text="card.term" :card-key="card.id" />
           <p
             v-if="!unaidedRecall && (card.phonetics?.uk || card.phonetics?.us)"
             class="phonetic"

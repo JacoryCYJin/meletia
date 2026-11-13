@@ -9,6 +9,8 @@ use std::{
 };
 use tauri::{AppHandle, Manager, State};
 
+mod speech;
+
 #[derive(Default)]
 struct StoreLock(Mutex<()>);
 
@@ -148,11 +150,14 @@ fn save_study_export_at(directory: &Path, filename: &str, csv: &str) -> Result<P
 fn main() {
     tauri::Builder::default()
         .manage(StoreLock::default())
+        .manage(speech::SpeechState::default())
         .invoke_handler(tauri::generate_handler![
             load_library,
             save_library,
             migrate_library,
-            save_study_export
+            save_study_export,
+            speech::speak_text,
+            speech::stop_speech
         ])
         .run(tauri::generate_context!())
         .expect("无法启动 Meletia");
