@@ -36,6 +36,7 @@ const openBook = computed(() =>
 );
 const session = ref("");
 const extraNew = ref(false);
+const dictationActive = ref(false);
 const view = computed(() => views[page.value]);
 const mainPanel = ref(null);
 const navigation = ref([{ page: "today", bookId: "", scrollTop: 0 }]);
@@ -65,6 +66,7 @@ function saveScroll() {
 }
 function showRoute(route) {
   session.value = "";
+  dictationActive.value = false;
   page.value = route.page;
   openBookId.value = route.bookId;
   nextTick(() =>
@@ -384,7 +386,7 @@ function finish() {
       @keydown="resizeWithKeyboard"
     ></div>
 
-    <main ref="mainPanel" :class="{ 'study-main': session || ['browse', 'csv-preview'].includes(page), 'insights-main': !session && page === 'insights' }">
+    <main ref="mainPanel" :class="{ 'study-main': session || ['browse', 'csv-preview'].includes(page) || (page === 'today' && dictationActive), 'insights-main': !session && page === 'insights', 'no-scrollbar': page === 'today' }">
       <div v-if="state.error" class="banner error" role="alert">
         <Icon name="alert" :size="18" /><span>{{
           state.ready ? state.error : "暂时无法载入词书，请重试。"
@@ -437,6 +439,7 @@ function finish() {
         @open-book="openBookPage"
         @csv-preview="openCsvPreview"
         @trash="navigate({ page: 'trash', bookId: '' })"
+        @dictation-active="dictationActive = $event"
       />
     </main>
     <ToastHost />

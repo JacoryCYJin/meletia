@@ -32,18 +32,26 @@ watch(
 async function save(key) {
   errors[key] = "";
   const raw = values[key];
-  const value =
-    key === "dailyReview" && (raw === "" || raw === null) ? null : Number(raw);
+  const optional = key === "dailyReview" || key === "dictationDailyReview";
+  const value = optional && (raw === "" || raw === null) ? null : Number(raw);
   if (
     value !== null &&
     (!Number.isSafeInteger(value) ||
       value < 0 ||
-      (key === "dailyNew" && value > 200))
+      ((key === "dailyNew" || key === "dictationDailyNew") && value > 200))
   ) {
     errors[key] =
-      key === "dailyNew"
+      key === "dailyNew" || key === "dictationDailyNew"
         ? "请输入 0–200 之间的整数。"
         : "请输入非负整数，或留空表示不限。";
+    return;
+  }
+  if (key === "dictationReplays" && value > 5) {
+    errors[key] = "请输入 0–5 之间的整数。";
+    return;
+  }
+  if (key === "dictationGroupSize" && (value < 1 || value > 50)) {
+    errors[key] = "请输入 1–50 之间的整数。";
     return;
   }
   if (state.settings[key] === value) return;
@@ -70,14 +78,41 @@ const fields = [
   {
     key: "groupSize",
     label: "每组新词",
-    hint: "完成一组辨识与回想后，再进入拼写。",
+    hint: "完成一组辨识与回想后，再进入拼写或听写。",
     unit: "个 / 组",
+  },
+  {
+    key: "dictationReplays",
+    label: "听写重播",
+    hint: "听写时每个词最多可再听几次；用完仍未写出，按未听出处理。",
+    unit: "次 / 词",
+    max: 5,
   },
   {
     key: "dailyReview",
     label: "每日复习上限",
     hint: "留空表示不限；填 0 暂停安排新的复习卡片。",
     unit: "个 / 天",
+  },
+  {
+    key: "dictationDailyNew",
+    label: "听写每日新词",
+    hint: "每天最多安排多少个没听写过的词。填 0 暂停安排。",
+    unit: "个 / 天",
+    max: 200,
+  },
+  {
+    key: "dictationDailyReview",
+    label: "听写每日复习上限",
+    hint: "留空表示不限；填 0 暂停安排到期的听写词。",
+    unit: "个 / 天",
+  },
+  {
+    key: "dictationGroupSize",
+    label: "听写每组词数",
+    hint: "今日听写每次最多练多少个词。",
+    unit: "个 / 组",
+    max: 50,
   },
 ];
 </script>
@@ -109,7 +144,7 @@ const fields = [
           <div class="setting-value">
             <div class="number-unit">
               <select
-                v-if="field.key === 'groupSize'"
+                v-if="field.key === 'groupSize' || field.key === 'dictationGroupSize'"
                 :id="field.key"
                 v-model="values[field.key]"
                 :disabled="Boolean(saving)"
@@ -117,7 +152,18 @@ const fields = [
               >
                 <option :value="10">10</option>
                 <option :value="15">15</option>
-                <option :value="20">20</option></select
+                <option :value="20">20</option>
+                <option :value="30">30</option></select
+              ><select
+                v-else-if="field.key === 'dictationReplays'"
+                :id="field.key"
+                v-model="values[field.key]"
+                :disabled="Boolean(saving)"
+                @change="save(field.key)"
+              >
+                <option v-for="count in 6" :key="count" :value="count - 1">
+                  {{ count - 1 }} 次
+                </option></select
               ><input
                 v-else
                 :id="field.key"

@@ -1,11 +1,17 @@
 import { localDay } from "./content.js";
-import { freshQueue, isDue } from "./books.js";
+import { bookRecites, freshQueue, isDue } from "./books.js";
 
-export function dayTasks(cards, books, settings, now = new Date(), reviews = []) {
-  const recallPending = cards.filter((card) => card.progress.needsRecall);
+export function dayTasks(cards, books, settings, now = new Date(), reviews = [], { bookIds } = {}) {
+  const allowedBooks = bookIds
+    ? books.filter((book) => bookIds.has(book.id))
+    : books.filter(bookRecites);
+  const owned = new Set(allowedBooks.flatMap((book) => book.cardIds));
+  const recallPending = cards.filter(
+    (card) => owned.has(card.id) && card.progress.needsRecall,
+  );
   const recallIds = new Set(recallPending.map((card) => card.id));
   const reviewPending = cards.filter(
-    (card) => !recallIds.has(card.id) && isDue(card, now),
+    (card) => owned.has(card.id) && !recallIds.has(card.id) && isDue(card, now),
   );
 
   const today = localDay(now);
@@ -31,8 +37,8 @@ export function dayTasks(cards, books, settings, now = new Date(), reviews = [])
     (card) => card.progress.introducedOn === today,
   ).length;
   const allowance = Math.max(0, settings.dailyNew - learnedToday);
-  const fresh = freshQueue(books, cards, allowance);
-  const extraFresh = freshQueue(books, cards, settings.groupSize);
+  const fresh = freshQueue(allowedBooks, cards, allowance);
+  const extraFresh = freshQueue(allowedBooks, cards, settings.groupSize);
 
   return { recall, review, fresh, extraFresh, allowance, reviewDeferred };
 }

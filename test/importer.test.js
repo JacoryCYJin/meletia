@@ -63,6 +63,19 @@ test("the first version selection immediately refreshes a reactive import previe
   assert.equal(preview.value.updated.length, 1);
 });
 
+test("tag filters keep only rows whose 学习重点 contains the requested tag", () => {
+  const { rows } = parseWords(
+    '单词,中文释义,学习重点\nscope,范围,"听辨,拼写"\ncontract,合同,拼写\nword,词,听辨',
+  );
+  const preview = previewImport(rows, [], { tags: "听辨" });
+  assert.deepEqual(preview.added.map((row) => row.word), ["scope", "word"]);
+  assert.equal(preview.skipped, 1);
+  assert.deepEqual(
+    previewImport(rows, []).added.map((row) => row.word),
+    ["scope", "contract", "word"],
+  );
+});
+
 test("plain two-column CSV keeps its first word", () => {
   assert.equal(parseWords("scope,范围\ncontract,合同").rows[0].word, "scope");
 });

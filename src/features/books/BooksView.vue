@@ -9,7 +9,7 @@ import {
   state,
   updateBook,
 } from "../../core/library.js";
-import { bookStats, bookUpdatedText } from "../../core/books.js";
+import { bookStats, bookUpdatedText, dictationStats } from "../../core/books.js";
 import Icon from "../../shared/Icon.vue";
 import Modal from "../../shared/Modal.vue";
 import ImportView from "../import/ImportView.vue";
@@ -26,10 +26,19 @@ onMounted(() => {
 onUnmounted(() => clearInterval(timer));
 
 const books = computed(() =>
-  state.books.map((book) => ({
-    book,
-    stats: bookStats(book, state.cards, now.value),
-  })),
+  state.books.map((book) => {
+    const stats = bookStats(book, state.cards, now.value);
+    const dictation = dictationStats(book, state.cards, now.value);
+    const recite = book.recite !== false;
+    return {
+      book,
+      stats,
+      dictation,
+      recite,
+      current: recite ? stats.learned : dictation.introduced,
+      total: recite ? stats.total : dictation.total,
+    };
+  }),
 );
 
 const activeCount = computed(
@@ -138,10 +147,19 @@ async function toggle(book) {
     setError(cause);
   }
 }
+
+async function toggleMode(book, mode) {
+  const current = mode === "recite" ? book.recite !== false : book.dictation === true;
+  try {
+    await updateBook(book.id, { [mode]: !current });
+  } catch (cause) {
+    setError(cause);
+  }
+}
 </script>
 
 <template>
-  <section class="page books-page">
+  <section class="page books-page books-page-modes">
     <header class="page-head page-head-actions">
       <div>
         <h1>
@@ -172,14 +190,14 @@ async function toggle(book) {
     </header>
     <div v-if="books.length" class="section-line">
       <h2>我的词书</h2>
-      <span>{{ activeCount }} 本参与每日学习</span>
+      <span>{{ activeCount }} 本已启用</span>
     </div>
     <section v-for="group in groups" :key="group.label" class="book-group">
       <template v-if="group.books.length"
         ><h2 v-if="group.label === '旧分组'">旧分组</h2>
         <ul class="book-list">
           <li
-            v-for="{ book, stats } in group.books"
+            v-for="{ book, stats, dictation, recite, current, total } in group.books"
             :key="book.id"
             class="book-item"
           >
@@ -192,10 +210,33 @@ async function toggle(book) {
                 <span class="book-cover"><Icon name="book" :size="26" /></span
                 ><span
                   ><strong>{{ book.name }}</strong
-                  ><small>{{ bookUpdatedText(book) }}</small></span
+                  ><small
+                    >{{ bookUpdatedText(book)
+                    }}<template v-if="book.dictation"> · 听写</template></small
+                  ></span
                 ><Icon name="arrowRight" :size="18" />
               </button>
               <div class="book-item-controls">
+                <button
+                  class="toggle"
+                  :class="{ on: book.recite !== false }"
+                  :aria-pressed="book.recite !== false"
+                  :disabled="state.busy"
+                  :title="'背诵：' + (book.recite !== false ? '开' : '关')"
+                  @click="toggleMode(book, 'recite')"
+                >
+                  <span class="switch-track"><i /></span>背诵
+                </button>
+                <button
+                  class="toggle"
+                  :class="{ on: book.dictation === true }"
+                  :aria-pressed="book.dictation === true"
+                  :disabled="state.busy"
+                  :title="'听写：' + (book.dictation === true ? '开' : '关')"
+                  @click="toggleMode(book, 'dictation')"
+                >
+                  <span class="switch-track"><i /></span>听写
+                </button>
                 <button
                   v-if="book.legacy"
                   class="ghost"
@@ -223,28 +264,30 @@ async function toggle(book) {
               </div>
             </div>
             <div class="book-progress-copy">
-              <span>{{ stats.learned }} / {{ stats.total }} 已学</span
-              ><span
+              <span v-if="recite">{{ stats.learned }} / {{ stats.total }} 已学</span
+              ><span v-else
+                >{{ dictation.introduced }} / {{ dictation.total }} 听过</span
+              ><span v-if="recite"
                 >{{ stats.fresh }} 个待学<template v-if="stats.due">
                   · {{ stats.due }} 个到期</template
                 ><template v-if="stats.recall">
                   · {{ stats.recall }} 个待回炉</template
+                ><template v-if="book.dictation">
+                  · 听写 {{ dictation.introduced }}</template
                 ></span
-              >
+              ><span v-else>{{ dictation.due }} 个听写到期</span>
             </div>
             <div
               class="meter"
               role="progressbar"
-              :aria-label="book.name + '学习进度'"
-              :aria-valuenow="stats.learned"
+              :aria-label="book.name + (recite ? '学习进度' : '听写进度')"
+              :aria-valuenow="current"
               :aria-valuemin="0"
-              :aria-valuemax="stats.total || 1"
+              :aria-valuemax="total || 1"
             >
               <span
                 :style="{
-                  width:
-                    (stats.total ? (stats.learned / stats.total) * 100 : 0) +
-                    '%',
+                  width: (total ? (current / total) * 100 : 0) + '%',
                 }"
               />
             </div>
@@ -402,3 +445,15 @@ async function toggle(book) {
     </dialog>
   </section>
 </template>
+
+<style scoped>
+.books-page-modes .book-item-controls {
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  max-width: 62%;
+}
+
+.books-page-modes .book-progress-copy {
+  row-gap: 6px;
+}
+</style>

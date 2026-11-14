@@ -5,13 +5,21 @@ import {
   loadLibrary, saveLearnCheckpoint, saveStudyResult, state, undoStudyResult,
 } from "../src/core/library.js";
 import {
+  answerDictation,
   answerQuestion,
+  continueDictation,
   continueQuestion,
+  createDictationSession,
   createLearnSession,
   createReviewSession,
   currentEntry,
+  dictationSummary,
+  dictationTarget,
   matchSpelling,
+  replayDictation,
+  resumeLearnCheckpoint,
   showAnswerDetail,
+  skipDictation,
   skipSpelling,
   skipWord,
   spell,
@@ -294,4 +302,71 @@ test("learning resumes from a saved answer and advances together with its comple
   await loadLibrary();
   assert.equal(state.learnCheckpoint, null);
   assert.equal(state.reviews.length, 1);
+});
+
+test("dictation rounds requeue misses and summarize first attempts", () => {
+  let session = createDictationSession(["a", "b"], 10);
+  assert.equal(session.phase, "dictation");
+  assert.deepEqual(session.dictation.list, ["a", "b"]);
+  assert.equal(dictationTarget(session), "a");
+
+  session = answerDictation(session, true);
+  assert.equal(dictationTarget(session), "b");
+
+  session = answerDictation(session, false);
+  assert.equal(session.phase, "dictation-feedback");
+  assert.deepEqual(session.dictation.missed, ["b"]);
+  session = continueDictation(session);
+  assert.equal(session.phase, "dictation");
+  assert.equal(dictationTarget(session), "b");
+  assert.equal(session.dictation.total, 2);
+  assert.deepEqual(session.dictation.missed, ["b"]);
+
+  session = answerDictation(session, true);
+  assert.equal(session.phase, "dictation-finished");
+  assert.deepEqual(dictationSummary(session), {
+    total: 2,
+    correct: 1,
+    wrong: 1,
+    missed: ["b"],
+  });
+});
+
+test("dictation rounds cap their size and revisit mistakes until cleared", () => {
+  const session = createDictationSession(["a", "b", "c"], 2);
+  assert.deepEqual(session.dictation.list, ["a", "b"]);
+  assert.equal(session.dictation.total, 2);
+
+  const wrong = continueDictation(answerDictation(session, false));
+  assert.deepEqual(wrong.dictation.list, ["a", "b", "a"]);
+  assert.deepEqual(wrong.dictation.missed, ["a"]);
+  assert.equal(dictationTarget(wrong), "b");
+
+  const afterSecond = answerDictation(wrong, true);
+  assert.equal(dictationTarget(afterSecond), "a");
+  const cleared = answerDictation(afterSecond, true);
+  assert.equal(cleared.phase, "dictation-finished");
+  assert.deepEqual(dictationSummary(cleared), {
+    total: 2,
+    correct: 1,
+    wrong: 1,
+    missed: ["a"],
+  });
+});
+
+test("dictation replays are capped and exhausted replays count as not heard", () => {
+  const session = createDictationSession(["a"], 10);
+  const first = replayDictation(session, 1);
+  assert.equal(first.allowed, true);
+  assert.equal(first.session.dictation.replays, 1);
+
+  const second = replayDictation(first.session, 1);
+  assert.equal(second.allowed, false);
+  assert.equal(second.session.dictation.replays, 1);
+  assert.equal(replayDictation(session, 0).allowed, false);
+
+  let mistaken = answerDictation(session, false);
+  mistaken = continueDictation(mistaken);
+  assert.deepEqual(mistaken.dictation.missed, ["a"]);
+  assert.equal(skipDictation(mistaken).phase, "dictation-finished");
 });

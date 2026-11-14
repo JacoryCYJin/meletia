@@ -9,6 +9,7 @@ import {
   migrateStore,
   newCard,
   parseSenses,
+  withDictationAttempt,
   wordKey,
 } from "./content.js";
 import { previewImport } from "./importer.js";
@@ -160,6 +161,8 @@ function newBook(title) {
     legacy: false,
     cardIds: [],
     active: true,
+    recite: true,
+    dictation: false,
     createdAt,
     updatedAt: createdAt,
   };
@@ -278,7 +281,7 @@ export async function importCards(
 }
 
 function contentWithoutProgress(card) {
-  const { progress, editedAt, ...content } = card;
+  const { progress, dictation, editedAt, ...content } = card;
   return content;
 }
 
@@ -556,6 +559,21 @@ export async function saveStudyResult(card, stage, rating, now = new Date(), lea
     learnCheckpoint,
   });
   return { record, previousProgress: card.progress, savedProgress: updated.progress };
+}
+
+export async function saveDictationResult(card, correct, now = new Date()) {
+  const updated = withDictationAttempt(card, correct ? 3 : 1, now);
+  const record = {
+    cardId: card.id,
+    at: now.toISOString(),
+    stage: "dictation",
+    rating: correct ? 3 : 1,
+  };
+  await commit({
+    cards: state.cards.map((item) => (item.id === card.id ? updated : item)),
+    reviews: [...state.reviews, record],
+  });
+  return { record, card: updated };
 }
 
 export async function undoStudyResult({ record, previousProgress, savedProgress }, learnCheckpoint) {

@@ -1,5 +1,5 @@
 import Papa from "papaparse";
-import { definitionOf, parseSenses, wordKey } from "./content.js";
+import { definitionOf, parseSenses, splitTags, wordKey } from "./content.js";
 
 const fieldNames = {
   word: ["单词", "词条", "英文", "word", "term", "front"],
@@ -79,6 +79,7 @@ export function previewImport(rows, cards, filters = {}, resolutions = {}) {
       !String(row.definition ?? "").trim() ||
       (filters.status && row.status !== filters.status) ||
       (filters.source && row.source !== filters.source) ||
+      (filters.tags && !splitTags(row.tags).includes(filters.tags)) ||
       (filters.date && normalizedDate !== filters.date)
     ) {
       skipped += 1;
