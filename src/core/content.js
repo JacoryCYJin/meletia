@@ -1,21 +1,39 @@
-import { stageForStep, stepForDays } from "./scheduler.js";
+import { dueAfter, nextStep, stageForStep, stepForDays } from "./scheduler.js";
 
 const PART_OF_SPEECH =
   /(?:n|v|vi|vt|adj|adv|prep|pron|conj|det|interj|aux|num|art|abbr)\./gi;
 
 export const STORE_VERSION = 8;
 
+export const LISTEN_TAG = "听辨";
+
 export const DEFAULT_SETTINGS = {
   dailyNew: 20,
   groupSize: 10,
   dailyReview: null,
   trashRetentionDays: 7,
+  dictationReplays: 2,
+  dictationDailyNew: 10,
+  dictationDailyReview: 20,
+  dictationGroupSize: 10,
 };
 
 export function wordKey(term) {
   return String(term ?? "")
     .trim()
     .toLowerCase();
+}
+
+export function splitTags(value) {
+  return String(value ?? "")
+    .split(/[,，、;；]+/)
+    .map((tag) => tag.trim())
+    .filter(Boolean);
+}
+
+export function hasTag(card, tag) {
+  if (!tag) return true;
+  return (card.tags ?? []).some((item) => String(item).trim() === tag);
 }
 
 export function idFor(term) {
@@ -124,6 +142,53 @@ export function meaningChoices(card, cards) {
   return choices;
 }
 
+export function defaultDictationProgress() {
+  return {
+    stage: "new",
+    step: 0,
+    streak: 0,
+    lastRating: null,
+    lastSeenAt: null,
+    introducedOn: null,
+    lapses: 0,
+    dueAt: null,
+  };
+}
+
+export function normalizeDictation(raw) {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return undefined;
+  const progress = defaultDictationProgress();
+  return {
+    ...progress,
+    ...raw,
+    stage: typeof raw.stage === "string" ? raw.stage : progress.stage,
+    step: Number.isInteger(raw.step) && raw.step >= 0 ? raw.step : 0,
+    lapses: Number.isInteger(raw.lapses) && raw.lapses >= 0 ? raw.lapses : 0,
+  };
+}
+
+export function withDictationAttempt(card, rating, now = new Date()) {
+  const first = !card.dictation;
+  const current = normalizeDictation(card.dictation) ?? defaultDictationProgress();
+  const correct = rating >= 3;
+  const step = first ? 0 : correct ? nextStep(current.step, 3) : 0;
+  return {
+    ...card,
+    dictation: {
+      stage: stageForStep(step),
+      step,
+      streak: 0,
+      lastRating: rating,
+      lastSeenAt: now.toISOString(),
+      introducedOn: current.introducedOn ?? localDay(now),
+      lapses: (current.lapses ?? 0) + (correct ? 0 : 1),
+      // A first miss still waits until tomorrow so it does not consume both the
+      // new-word and due-review allowances on the same day.
+      dueAt: !first && !correct ? now.toISOString() : dueAfter(step, now),
+    },
+  };
+}
+
 export function defaultProgress() {
   return {
     stage: "new",
@@ -155,10 +220,7 @@ export function newCard(row, now = new Date()) {
     source: String(row.source ?? "").trim(),
     status: String(row.status ?? "").trim(),
     markedOn: String(row.date ?? "").trim(),
-    tags: String(row.tags ?? "")
-      .split(/[,，、;；]+/)
-      .map((tag) => tag.trim())
-      .filter(Boolean),
+    tags: splitTags(row.tags),
     createdAt: now.toISOString(),
     editedAt: null,
     progress: defaultProgress(),
@@ -237,6 +299,7 @@ function normalizeCard(raw, now) {
     createdAt: raw.createdAt ?? now.toISOString(),
     editedAt: raw.editedAt ?? null,
     progress: normalizeProgress(raw, now),
+    dictation: normalizeDictation(raw.dictation),
   };
 }
 
@@ -259,6 +322,8 @@ function buildBooks(cards, rawBooks, legacy) {
           (legacy && Boolean(book.source || ["自建", "未分类"].includes(book.name))),
         cardIds: book.cardIds.filter(Boolean),
         active: book.active !== false,
+        recite: book.recite !== false,
+        dictation: book.dictation === true,
         createdAt: book.createdAt ?? new Date().toISOString(),
         updatedAt: book.updatedAt ?? null,
       }));
@@ -282,6 +347,8 @@ function buildBooks(cards, rawBooks, legacy) {
     legacy: true,
     cardIds,
     active: true,
+    recite: true,
+    dictation: false,
     createdAt: new Date().toISOString(),
     updatedAt: null,
   }));
@@ -336,6 +403,24 @@ export function migrateStore(raw, now = new Date()) {
       dailyReview: Number.isSafeInteger(data.settings?.dailyReview) && data.settings.dailyReview >= 0
         ? data.settings.dailyReview
         : DEFAULT_SETTINGS.dailyReview,
+      dictationReplays: Number.isSafeInteger(data.settings?.dictationReplays) &&
+        data.settings.dictationReplays >= 0 && data.settings.dictationReplays <= 5
+        ? data.settings.dictationReplays
+        : DEFAULT_SETTINGS.dictationReplays,
+      dictationDailyNew: Number.isSafeInteger(data.settings?.dictationDailyNew) &&
+        data.settings.dictationDailyNew >= 0 && data.settings.dictationDailyNew <= 200
+        ? data.settings.dictationDailyNew
+        : DEFAULT_SETTINGS.dictationDailyNew,
+      dictationDailyReview: data.settings?.dictationDailyReview === null
+        ? null
+        : Number.isSafeInteger(data.settings?.dictationDailyReview) &&
+            data.settings.dictationDailyReview >= 0
+          ? data.settings.dictationDailyReview
+          : DEFAULT_SETTINGS.dictationDailyReview,
+      dictationGroupSize: Number.isSafeInteger(data.settings?.dictationGroupSize) &&
+        data.settings.dictationGroupSize >= 1 && data.settings.dictationGroupSize <= 50
+        ? data.settings.dictationGroupSize
+        : DEFAULT_SETTINGS.dictationGroupSize,
     },
     cards: [...owned.values()],
     books,

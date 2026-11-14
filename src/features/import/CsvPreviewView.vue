@@ -2,6 +2,7 @@
 import { computed, onBeforeUnmount, ref, shallowRef, watch } from "vue";
 import { hasKnownHeader, mapRows, parseTable } from "../../core/importer.js";
 import { CSV_PREVIEW_FIELDS, createCsvPreviewCards, previewMappingError, selectCsvPreviewRows, suggestCsvPreviewMapping } from "../../core/csv-preview.js";
+import { splitTags } from "../../core/content.js";
 import ReadOnlyCards from "../../shared/ReadOnlyCards.vue";
 import Icon from "../../shared/Icon.vue";
 
@@ -12,7 +13,7 @@ const table = shallowRef(null);
 const hasHeader = ref(false);
 const delimiter = ref("");
 const mapping = ref({});
-const filters = ref({ source: "", status: "", date: "" });
+const filters = ref({ source: "", status: "", tags: "", date: "" });
 const cards = shallowRef(null);
 const busy = ref(false);
 const dragging = ref(false);
@@ -28,14 +29,14 @@ const mappingError = computed(() => table.value ? previewMappingError(mapping.va
 const rows = computed(() => table.value && !mappingError.value ? mapRows(table.value.data, hasHeader.value, mapping.value) : []);
 const filterOptions = computed(() => Object.fromEntries(["source", "status"].map(field => [field,
   [...new Set(rows.value.map(row => row[field]).filter(Boolean))].sort(),
-])));
+]).concat([["tags", [...new Set(rows.value.flatMap(row => splitTags(row.tags)))].sort()]])));
 const selection = computed(() => table.value && !mappingError.value
   ? selectCsvPreviewRows(table.value, hasHeader.value, mapping.value, filters.value)
   : { rows: [], total: 0, invalid: 0, filtered: 0 });
 const sample = computed(() => table.value?.data.slice(hasHeader.value ? 1 : 0, hasHeader.value ? 6 : 5) ?? []);
 const rowCount = computed(() => Math.max(0, (table.value?.data.length ?? 0) - (hasHeader.value ? 1 : 0)));
 const canStart = computed(() => !busy.value && !error.value && !mappingError.value && selection.value.rows.length > 0);
-function resetFilters() { filters.value = { source: "", status: "", date: "" }; }
+function resetFilters() { filters.value = { source: "", status: "", tags: "", date: "" }; }
 watch(mapping, resetFilters, { deep: true });
 function resetMapping() {
   mapping.value = table.value ? suggestCsvPreviewMapping(table.value, hasHeader.value) : {};
@@ -139,11 +140,12 @@ onBeforeUnmount(() => { disposed = true; clear(); });
           </div>
           <p v-if="mappingError" class="field-error" role="status">{{ mappingError }}</p>
         </section>
-        <section v-if="!mappingError && (filterOptions.source.length || filterOptions.status.length || mapping.date >= 0)" class="csv-filters" aria-labelledby="csv-filter-title">
+        <section v-if="!mappingError && (filterOptions.source.length || filterOptions.status.length || filterOptions.tags.length || mapping.date >= 0)" class="csv-filters" aria-labelledby="csv-filter-title">
           <h2 id="csv-filter-title">筛选本次内容</h2>
           <div class="csv-field-grid">
             <label v-if="filterOptions.source.length" class="field"><span>来源</span><select v-model="filters.source" aria-label="预览筛选来源"><option value="">全部</option><option v-for="value in filterOptions.source" :key="value">{{ value }}</option></select></label>
             <label v-if="filterOptions.status.length" class="field"><span>掌握状态</span><select v-model="filters.status" aria-label="预览筛选掌握状态"><option value="">全部</option><option v-for="value in filterOptions.status" :key="value">{{ value }}</option></select></label>
+            <label v-if="filterOptions.tags.length" class="field"><span>标签</span><select v-model="filters.tags" aria-label="预览筛选标签"><option value="">全部</option><option v-for="value in filterOptions.tags" :key="value">{{ value }}</option></select></label>
             <label v-if="mapping.date >= 0" class="field"><span>记录日期</span><input v-model="filters.date" type="date" aria-label="预览筛选日期" /></label>
           </div>
         </section>

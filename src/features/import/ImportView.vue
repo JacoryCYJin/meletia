@@ -9,6 +9,7 @@ import {
   suggestMapping,
 } from "../../core/importer.js";
 import { cardsInImportTarget, importCards, state } from "../../core/library.js";
+import { splitTags } from "../../core/content.js";
 
 const emit = defineEmits(["close"]);
 
@@ -39,7 +40,7 @@ const hasHeader = ref(false);
 const mapping = ref({});
 const extraMappings = ref([]);
 let nextMappingId = 0;
-const filters = ref({ status: "", source: "", date: "" });
+const filters = ref({ status: "", source: "", tags: "", date: "" });
 const destination = ref("new");
 const bookName = ref("");
 const busy = ref(false);
@@ -93,6 +94,8 @@ const filterOptions = computed(() =>
     ["status", "source"].map((field) => [
       field,
       [...new Set(rows.value.map((row) => row[field]).filter(Boolean))].sort(),
+    ]).concat([
+      ["tags", [...new Set(rows.value.flatMap((row) => splitTags(row.tags)))].sort()],
     ]),
   ),
 );
@@ -158,7 +161,7 @@ function resetMapping() {
   for (const row of extraMappings.value) {
     row.column = suggested[row.property] ?? -1;
   }
-  filters.value = { status: "", source: "", date: "" };
+  filters.value = { status: "", source: "", tags: "", date: "" };
 }
 
 function parseFile(detectHeader = false) {
@@ -497,6 +500,7 @@ async function confirm() {
               step === 'configure' &&
               (filterOptions.status.length ||
                 filterOptions.source.length ||
+                filterOptions.tags.length ||
                 selectedMapping.date >= 0)
             "
             class="import-fields"
@@ -516,6 +520,15 @@ async function confirm() {
                 <option value="">全部</option>
                 <option v-for="source in filterOptions.source" :key="source">
                   {{ source }}
+                </option>
+              </select>
+            </label>
+            <label v-if="filterOptions.tags.length" class="import-field">
+              <span>筛选标签</span>
+              <select v-model="filters.tags">
+                <option value="">全部</option>
+                <option v-for="tag in filterOptions.tags" :key="tag">
+                  {{ tag }}
                 </option>
               </select>
             </label>

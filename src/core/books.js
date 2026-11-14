@@ -22,6 +22,14 @@ export function isDue(card, now = new Date()) {
   );
 }
 
+export function bookRecites(book) {
+  return book.active !== false && book.recite !== false;
+}
+
+export function bookDictates(book) {
+  return book.active !== false && book.dictation === true;
+}
+
 export function bookStats(book, cards, now = new Date()) {
   const list = bookCards(book, cards);
   return {
@@ -33,15 +41,27 @@ export function bookStats(book, cards, now = new Date()) {
   };
 }
 
-export function freshQueue(books, cards, limit) {
+export function dictationStats(book, cards, now = new Date()) {
+  const list = bookCards(book, cards);
+  return {
+    total: list.length,
+    introduced: list.filter((card) => card.dictation).length,
+    due: list.filter(
+      (card) => card.dictation?.dueAt && new Date(card.dictation.dueAt) <= now,
+    ).length,
+  };
+}
+
+export function freshQueue(books, cards, limit, isFresh = (card) => card.progress.stage === "new") {
   if (limit <= 0) return [];
   const byId = new Map(cards.map((card) => [card.id, card]));
   const queues = books
     .filter((book) => book.active)
     .map((book) => ({
-      ids: book.cardIds.filter(
-        (id) => byId.get(id)?.progress.stage === "new",
-      ),
+      ids: book.cardIds.filter((id) => {
+        const card = byId.get(id);
+        return card ? isFresh(card) : false;
+      }),
     }));
 
   const picked = [];

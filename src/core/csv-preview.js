@@ -1,5 +1,5 @@
 import { mapRows, suggestMapping } from "./importer.js";
-import { newCard } from "./content.js";
+import { splitTags, newCard } from "./content.js";
 
 export const CSV_PREVIEW_FIELDS = [
   { id: "word", label: "单词", required: true },
@@ -49,6 +49,7 @@ export function selectCsvPreviewRows(table, hasHeader, mapping, filters = {}) {
     if (!row.word || !row.definition) { invalid++; continue; }
     if ((filters.source && row.source !== filters.source) ||
         (filters.status && row.status !== filters.status) ||
+        (filters.tags && !splitTags(row.tags).includes(filters.tags)) ||
         (filters.date && dateOf(row.date) !== filters.date)) { filtered++; continue; }
     selected.push(row);
   }

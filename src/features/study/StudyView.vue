@@ -10,6 +10,7 @@ import {
 import Icon from "../../shared/Icon.vue";
 import PronunciationButtons from "../../shared/PronunciationButtons.vue";
 import WordDetail from "../../shared/WordDetail.vue";
+import TypeAnswerInput from "../../shared/TypeAnswerInput.vue";
 import StudySummary from "./StudySummary.vue";
 import { pendingStudyCards, studySummary } from "../../core/study-summary.js";
 import { definitionOf, meaningChoices } from "../../core/content.js";
@@ -21,6 +22,7 @@ import {
   currentEntry,
   matchSpelling,
   progressOf,
+  resumeLearnCheckpoint,
   showAnswerDetail,
   skipSpelling,
   skipWord,
@@ -128,6 +130,13 @@ const learningChoice = computed(
 const unaidedRecall = computed(
   () => round.value === "recall" && session.value?.phase === "card",
 );
+const canMarkWrong = computed(
+  () =>
+    props.mode === "learn" &&
+    round.value === "recall" &&
+    session.value?.phase === "detail" &&
+    session.value?.rating === 3,
+);
 const showPrevious = computed(() =>
   ["card", "choice-feedback", "detail", "spelling-ready"].includes(
     session.value?.phase,
@@ -160,12 +169,14 @@ function rememberGroup() {
 
 function buildSession() {
   if (props.mode === "learn" && state.learnCheckpoint) {
-    const saved = state.learnCheckpoint;
-    session.value = saved.session;
-    restoredChoices.value = saved.choices ?? null;
-    selectedChoice.value = saved.selectedChoice ?? null;
-    rememberGroup();
-    return;
+    const saved = resumeLearnCheckpoint(state.learnCheckpoint, state.cards);
+    if (saved) {
+      session.value = saved.session;
+      restoredChoices.value = saved.choices ?? null;
+      selectedChoice.value = saved.selectedChoice ?? null;
+      rememberGroup();
+      return;
+    }
   }
   const tasks = dayTasks(
     state.cards,
@@ -388,6 +399,11 @@ function next() {
   return advance(continueQuestion(session.value), session.value.rating);
 }
 
+async function markWrong() {
+  if (busy.value || !canMarkWrong.value) return;
+  return advance(continueQuestion({ ...session.value, rating: 1 }), 1);
+}
+
 function mask(term) {
   return String(term ?? "")
     .split(" ")
@@ -564,6 +580,16 @@ function onKey(event) {
     return;
   }
 
+  if (
+    phase === "detail" &&
+    canMarkWrong.value &&
+    event.key.toLowerCase() === "e"
+  ) {
+    event.preventDefault();
+    markWrong();
+    return;
+  }
+
   if (!confirm || typing || onButton) return;
   if (phase === "detail") {
     event.preventDefault();
@@ -696,6 +722,7 @@ function onKey(event) {
                   (choiceFeedback && Boolean(choiceResult(choice)))
                 "
                 :aria-expanded="choiceFeedback ? isRevealed(choice) : undefined"
+                :title="choice.meaning"
                 @click="chooseOption(choice)"
               >
                 <template v-if="learningChoice">
@@ -771,6 +798,15 @@ function onKey(event) {
           class="stage-actions"
           :class="{ 'choice-detail-enter': learningChoice }"
         >
+          <button
+            v-if="canMarkWrong"
+            type="button"
+            class="ghost"
+            :disabled="busy"
+            @click="markWrong()"
+          >
+            记错了 <kbd>E</kbd>
+          </button>
           <button
             type="button"
             class="primary big"
@@ -885,54 +921,44 @@ function onKey(event) {
     </div>
 
     <div v-else-if="session.phase === 'spell' && spellingCard" class="stage">
-      <div class="stage-content">
-        <p class="stage-meta">
-          <span>拼写</span>
-          <span>
-            {{ (session.spelling?.index ?? 0) + 1 }} /
-            {{ session.spelling?.list.length }}
-          </span>
-        </p>
+      <div class="stage-content spell-stage">
+        <div class="spell-column">
+          <p class="stage-meta">
+            <span>拼写</span>
+            <span>
+              {{ (session.spelling?.index ?? 0) + 1 }} /
+              {{ session.spelling?.list.length }}
+            </span>
+          </p>
 
-        <div class="senses spell-prompt">
-          <p
-            v-for="(sense, index) in spellingCard.senses"
-            :key="index"
-            class="sense"
-          >
-            <span v-if="sense.pos" class="pos">{{ sense.pos }}</span>
-            <span>{{ sense.text }}</span>
+          <div class="senses spell-prompt">
+            <p
+              v-for="(sense, index) in spellingCard.senses"
+              :key="index"
+              class="sense"
+            >
+              <span v-if="sense.pos" class="pos">{{ sense.pos }}</span>
+              <span>{{ sense.text }}</span>
+            </p>
+          </div>
+
+          <p class="hint">{{ mask(spellingCard.term) }}</p>
+
+          <div class="spell-input-wrap">
+            <TypeAnswerInput
+              ref="spellingInput"
+              v-model="answer"
+              :disabled="busy"
+              :invalid="Boolean(feedback)"
+              aria-label="拼写英文词条"
+              @submit="submitSpelling"
+            />
+          </div>
+
+          <p class="feedback spelling-feedback" role="status">
+            <Icon v-if="feedback" name="alert" :size="16" />{{ feedback }}
           </p>
         </div>
-
-        <p class="hint">{{ mask(spellingCard.term) }}</p>
-
-        <form class="spell-form" @submit.prevent="submitSpelling">
-          <input
-            ref="spellingInput"
-            v-model="answer"
-            class="spell-input"
-            :aria-invalid="Boolean(feedback)"
-            :disabled="busy"
-            type="text"
-            autocomplete="off"
-            autocapitalize="off"
-            spellcheck="false"
-            placeholder="输入英文，回车确认"
-            aria-label="拼写英文词条"
-          />
-          <button
-            type="submit"
-            class="primary"
-            :disabled="busy || !answer.trim()"
-          >
-            确认
-          </button>
-        </form>
-
-        <p class="feedback spelling-feedback" role="status">
-          <Icon v-if="feedback" name="alert" :size="16" />{{ feedback }}
-        </p>
       </div>
       <div class="stage-actions">
         <button type="button" class="ghost" :disabled="busy" @click="skip">
@@ -1058,6 +1084,15 @@ function onKey(event) {
   grid-area: 2 / 1;
 }
 
+.choice-cards .choice-top,
+.choice-cards .choice-bottom {
+  display: block;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 .choice-bottom .choice-pos {
   margin-right: 4px;
   font-size: 0.9em;
@@ -1125,6 +1160,68 @@ function onKey(event) {
   justify-content: center;
 }
 
+.stage-actions {
+  justify-content: center;
+}
+
+.stage-content > .stage-meta {
+  justify-content: center;
+}
+
+.stage-content > .term,
+.stage-content > .phonetic {
+  text-align: center;
+}
+
+.stage-content :deep(.pronunciations) {
+  justify-content: center;
+}
+
+.spell-stage {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 32px 40px;
+}
+
+.spell-column {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  width: min(560px, 100%);
+  text-align: center;
+}
+
+.spell-column .stage-meta {
+  justify-content: center;
+}
+
+.spell-column .spell-prompt {
+  justify-items: center;
+  width: 100%;
+  margin: 16px 0 8px;
+}
+
+.spell-column .spell-prompt .sense {
+  justify-content: center;
+}
+
+.spell-column .hint {
+  margin-top: 8px;
+  margin-bottom: 12px;
+}
+
+.spell-input-wrap {
+  width: 100%;
+  margin-top: 4px;
+}
+
+.spell-column .spelling-feedback {
+  justify-content: center;
+  text-align: center;
+}
+
 .choice-detail-enter {
   animation: choice-detail-in 320ms ease-out both;
 }
@@ -1159,4 +1256,5 @@ function onKey(event) {
     animation: none;
   }
 }
+
 </style>

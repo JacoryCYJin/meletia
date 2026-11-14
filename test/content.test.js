@@ -3,13 +3,68 @@ import test from "node:test";
 import {
   blankCard,
   definitionOf,
+  hasTag,
   idFor,
   migrateStore,
   parseSenses,
   senseLine,
+  splitTags,
   STORE_VERSION,
   wordKey,
 } from "../src/core/content.js";
+
+test("tags split on the same separators and match whole entries", () => {
+  assert.deepEqual(splitTags("听辨, 拼写，阅读；写作"), ["听辨", "拼写", "阅读", "写作"]);
+  assert.deepEqual(splitTags(""), []);
+  assert.equal(hasTag({ tags: ["听辨", "拼写"] }, "听辨"), true);
+  assert.equal(hasTag({ tags: ["听辨重点"] }, "听辨"), false);
+  assert.equal(hasTag({ tags: [] }, ""), true);
+  assert.equal(hasTag({}, "听辨"), false);
+});
+
+test("book modes default to recitation and card dictation survives normalization", () => {
+  const card = { ...blankCard(new Date(2026, 10, 14)), term: "scope" };
+  const store = migrateStore({
+    version: 8,
+    cards: [card],
+    books: [{ id: "b", name: "书", cardIds: [card.id] }],
+    reviews: [],
+  });
+  assert.equal(store.books[0].recite, true);
+  assert.equal(store.books[0].dictation, false);
+  assert.equal(store.cards[0].dictation, undefined);
+
+  const tracked = migrateStore({
+    version: 8,
+    cards: [{
+      ...card,
+      dictation: { step: 2, stage: "consolidating", dueAt: "2026-11-20T00:00:00.000Z" },
+    }],
+    books: [{
+      id: "b",
+      name: "书",
+      cardIds: [card.id],
+      recite: false,
+      dictation: true,
+    }],
+    reviews: [],
+  });
+  assert.equal(tracked.books[0].recite, false);
+  assert.equal(tracked.books[0].dictation, true);
+  assert.equal(tracked.cards[0].dictation.step, 2);
+  assert.equal(tracked.cards[0].dictation.lapses, 0);
+  assert.equal(tracked.cards[0].dictation.introducedOn, null);
+});
+
+test("dictation replay defaults survive old settings and reject invalid values", () => {
+  const read = (settings) =>
+    migrateStore({ version: 8, settings, cards: [], books: [], reviews: [] }).settings.dictationReplays;
+  assert.equal(read(undefined), 2);
+  assert.equal(read({ dictationReplays: 0 }), 0);
+  assert.equal(read({ dictationReplays: 5 }), 5);
+  assert.equal(read({ dictationReplays: 9 }), 2);
+  assert.equal(read({ dictationReplays: 1.5 }), 2);
+});
 
 test("senses split at part-of-speech boundaries and keep the marker", () => {
   assert.deepEqual(
@@ -116,7 +171,16 @@ test("migrating version 4 keeps books, settings and review logs", () => {
   });
 
   assert.equal(store.migrated, true);
-  assert.deepEqual(store.settings, { dailyNew: 30, groupSize: 20, dailyReview: null, trashRetentionDays: 7 });
+  assert.deepEqual(store.settings, {
+    dailyNew: 30,
+    groupSize: 20,
+    dailyReview: null,
+    trashRetentionDays: 7,
+    dictationReplays: 2,
+    dictationDailyNew: 10,
+    dictationDailyReview: 20,
+    dictationGroupSize: 10,
+  });
   assert.equal(store.books[0].name, "雅思练习生词");
   assert.equal(store.books[0].active, false);
   assert.equal(store.reviews.length, 1);

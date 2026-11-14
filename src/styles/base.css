@@ -473,6 +473,13 @@ main.study-main {
   overflow: hidden;
   padding: 0;
 }
+main.no-scrollbar {
+  scrollbar-width: none;
+}
+main.no-scrollbar::-webkit-scrollbar {
+  width: 0;
+  height: 0;
+}
 .page {
   width: 100%;
 }
@@ -1803,14 +1810,6 @@ dialog::backdrop {
   letter-spacing: 0.12em;
   font-size: 18px;
   margin-bottom: 16px;
-}
-.spell-form {
-  display: flex;
-  gap: 8px;
-  max-width: 560px;
-}
-.spell-input {
-  font: 17px var(--mono);
 }
 .feedback {
   color: var(--danger);

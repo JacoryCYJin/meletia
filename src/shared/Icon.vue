@@ -34,6 +34,7 @@ const paths = {
   check: "M20 6 9 17l-5-5",
   volume:
     "M11 5 6 9H3v6h3l5 4V5Zm4.5 2a5 5 0 0 1 0 10m3-13a9 9 0 0 1 0 16",
+  enter: "M20 4v7a4 4 0 0 1-4 4H5m0 0 4-4m-4 4 4 4",
 };
 
 const d = computed(() => paths[props.name] ?? "");

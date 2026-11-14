@@ -1,12 +1,25 @@
 <script setup>
 import { computed, onMounted, onUnmounted, ref } from "vue";
-import { state } from "../../core/library.js";
+import { cardById, saveDictationResult, state } from "../../core/library.js";
 import { bookStats } from "../../core/books.js";
 import { dayTasks } from "../../core/stats.js";
+import {
+  DICTATION_RANGES,
+  buildFreeDictationQueue,
+  dictationTasks,
+} from "../../core/dictation.js";
+import { createDictationSession } from "../../core/session.js";
+import DictationPanel from "../dictation/DictationPanel.vue";
+import { useDictationRunner } from "../dictation/useDictationRunner.js";
 import Icon from "../../shared/Icon.vue";
 import Modal from "../../shared/Modal.vue";
 
-const emit = defineEmits(["start", "navigate", "open-book"]);
+const emit = defineEmits([
+  "start",
+  "navigate",
+  "open-book",
+  "dictation-active",
+]);
 const showContinue = ref(false);
 
 const now = ref(new Date());
@@ -15,8 +28,13 @@ onMounted(() => {
   timer = setInterval(() => {
     now.value = new Date();
   }, 30000);
+  window.addEventListener("keydown", onDictationKey);
 });
-onUnmounted(() => clearInterval(timer));
+onUnmounted(() => {
+  clearInterval(timer);
+  window.removeEventListener("keydown", onDictationKey);
+  emit("dictation-active", false);
+});
 
 const tasks = computed(() =>
   dayTasks(state.cards, state.books, state.settings, now.value, state.reviews),
@@ -24,6 +42,141 @@ const tasks = computed(() =>
 const reviewTotal = computed(
   () => tasks.value.recall.length + tasks.value.review.length,
 );
+const dictation = computed(() =>
+  dictationTasks(
+    state.cards,
+    state.books,
+    state.settings,
+    now.value,
+    state.reviews,
+  ),
+);
+const dictationSize = computed(() =>
+  Number.isSafeInteger(state.settings.dictationGroupSize)
+    ? state.settings.dictationGroupSize
+    : 10,
+);
+const dictationSession = ref(null);
+const dictationKind = ref("fresh");
+const dictationQueueIds = ref([]);
+const freeOpen = ref(false);
+const freeBooks = ref([]);
+const freeRange = ref("all");
+const freeSize = ref(10);
+
+const runner = useDictationRunner({
+  session: dictationSession,
+  cardOf: cardById,
+  replayLimit: computed(() => state.settings.dictationReplays ?? 2),
+  saveCorrect: async (card) => {
+    if (dictationKind.value !== "free") await saveDictationResult(card, true);
+  },
+  saveWrong: async (card) => {
+    if (dictationKind.value !== "free") await saveDictationResult(card, false);
+  },
+});
+const {
+  answer: dictationAnswer,
+  busy: dictationBusy,
+  correct: dictationCorrect,
+  accent: dictationAccent,
+  card: dictationCard,
+  feedbackCard: dictationFeedbackCard,
+  dictation: dictationRound,
+  replaysLeft: dictationReplaysLeft,
+  summary: dictationRoundSummary,
+  submit: submitDictation,
+  replay: replayDictation,
+  changeAccent: changeDictationAccent,
+  continueFeedback: continueDictation,
+  skip: skipDictation,
+  handleKey: handleDictationKey,
+} = runner;
+
+const freeQueue = computed(() =>
+  buildFreeDictationQueue({
+    cards: state.cards,
+    books: state.books,
+    bookIds: freeBooks.value,
+    range: freeRange.value,
+    limit: freeSize.value,
+  }),
+);
+
+function startRound(ids, kind) {
+  if (!ids.length) return;
+  dictationKind.value = kind;
+  dictationQueueIds.value = ids;
+  dictationSession.value = createDictationSession(ids, ids.length);
+  runner.reset();
+  emit("dictation-active", true);
+}
+
+function startDictation(kind) {
+  const source = kind === "fresh" ? dictation.value.fresh : dictation.value.due;
+  startRound(
+    source.slice(0, dictationSize.value).map((item) => item.id),
+    kind,
+  );
+}
+
+function exitDictation() {
+  dictationSession.value = null;
+  emit("dictation-active", false);
+}
+
+function restartDictation() {
+  if (dictationKind.value === "free") {
+    startRound(dictationQueueIds.value, "free");
+    return;
+  }
+  const source =
+    dictationKind.value === "fresh" ? dictation.value.fresh : dictation.value.due;
+  const next = source.slice(0, dictationSize.value).map((item) => item.id);
+  if (!next.length) {
+    exitDictation();
+    return;
+  }
+  startRound(next, dictationKind.value);
+}
+
+function openFreePractice() {
+  const defaults = activeBooks.value.filter((book) => book.dictation === true);
+  freeBooks.value = (defaults.length ? defaults : activeBooks.value).map(
+    (book) => book.id,
+  );
+  freeRange.value = "all";
+  freeSize.value = dictationSize.value;
+  freeOpen.value = true;
+}
+
+function startFreePractice() {
+  const ids = freeQueue.value.map((item) => item.id);
+  if (!ids.length) return;
+  freeOpen.value = false;
+  startRound(ids, "free");
+}
+
+function onDictationKey(event) {
+  if (!dictationSession.value) return;
+  if (
+    event.isComposing ||
+    event.metaKey ||
+    event.ctrlKey ||
+    event.altKey ||
+    event.repeat
+  )
+    return;
+  if (dictationSession.value.phase === "dictation-finished") {
+    if (event.key === "Enter" && !event.target?.closest?.("button")) {
+      event.preventDefault();
+      restartDictation();
+    }
+    return;
+  }
+  handleDictationKey(event);
+}
+
 const canLearn = computed(() =>
   Boolean(state.learnCheckpoint || tasks.value.extraFresh.length),
 );
@@ -93,7 +246,30 @@ const summary = computed(() => {
 </script>
 
 <template>
-  <section class="page today-page">
+  <section class="page today-page" :class="{ 'dictation-inline': dictationSession }">
+    <DictationPanel
+      v-if="dictationSession"
+      :phase="dictationSession.phase"
+      :dictation="dictationRound"
+      :card="dictationCard"
+      :feedback-card="dictationFeedbackCard"
+      :answer="dictationAnswer"
+      :busy="dictationBusy"
+      :correct="dictationCorrect"
+      :replays-left="dictationReplaysLeft"
+      :accent="dictationAccent"
+      :summary="dictationRoundSummary"
+      secondary-label="回今日"
+      @update:answer="dictationAnswer = $event"
+      @submit="submitDictation"
+      @replay="replayDictation"
+      @accent="changeDictationAccent"
+      @continue="continueDictation"
+      @skip="skipDictation"
+      @restart="restartDictation"
+      @secondary="exitDictation"
+    />
+    <template v-else>
     <header class="page-head">
       <div class="title-line">
         <h1>今日</h1>
@@ -133,6 +309,7 @@ const summary = computed(() => {
           管理词书
         </button>
       </div>
+      <div class="section-line study-tasks-line"><h2>学习任务</h2></div>
       <div class="task-grid">
         <article class="task" :class="{ quiet: !canLearn }">
           <div class="task-heading">
@@ -193,6 +370,59 @@ const summary = computed(() => {
           </button>
         </article>
       </div>
+      <div class="section-line dictation-line">
+        <h2>听写任务</h2>
+        <button class="link" @click="openFreePractice">
+          自由练习<Icon name="arrowRight" :size="15" />
+        </button>
+      </div>
+      <div class="task-grid dictation-grid">
+        <article class="task" :class="{ quiet: !dictation.fresh.length }">
+          <div class="task-heading">
+            <Icon name="volume" :size="22" />
+            <h2>听写新词</h2>
+            <span class="task-count">{{ dictation.fresh.length }}</span>
+          </div>
+          <p class="task-hint">
+            {{
+              dictation.fresh.length
+                ? "只听发音，写出还没听写过的词。"
+                : "没有待听写的新词。可以在词书页给词书打开「听写」。"
+            }}
+          </p>
+          <button
+            class="primary"
+            :disabled="!dictation.fresh.length"
+            @click="startDictation('fresh')"
+          >
+            {{ dictation.fresh.length ? "开始听写" : "暂无新词"
+            }}<Icon v-if="dictation.fresh.length" name="arrowRight" :size="16" />
+          </button>
+        </article>
+        <article class="task" :class="{ quiet: !dictation.due.length }">
+          <div class="task-heading">
+            <Icon name="history" :size="22" />
+            <h2>听写复习</h2>
+            <span class="task-count">{{ dictation.due.length }}</span>
+          </div>
+          <p class="task-hint">
+            <template v-if="dictation.due.length"
+              >{{ dictation.due.length }} 个到期。趁还记得声音，再写一遍。</template
+            ><template v-else-if="dictation.reviewDeferred"
+              >已达每日听写复习上限，还有 {{ dictation.reviewDeferred }} 个词待复习。</template
+            ><template v-else
+              >暂时没有到期的听写词。</template
+            >
+          </p>
+          <button
+            :disabled="!dictation.due.length"
+            @click="startDictation('due')"
+          >
+            {{ dictation.due.length ? "开始听写" : "暂无到期复习"
+            }}<Icon v-if="dictation.due.length" name="arrowRight" :size="16" />
+          </button>
+        </article>
+      </div>
       <div class="section-line">
         <h2>词书进度</h2>
         <button class="link" @click="$emit('navigate', 'books')">
@@ -223,14 +453,7 @@ const summary = computed(() => {
           ><Icon name="arrowRight" :size="16" />
         </button>
       </div>
-      <p class="section-note">
-        每日安排可在<button
-          class="text-button"
-          @click="$emit('navigate', 'settings')"
-        >
-          设置</button
-        >中调整。
-      </p>
+    </template>
     </template>
   </section>
   <Modal
@@ -256,9 +479,116 @@ const summary = computed(() => {
       <button @click="showContinue = false">今天先到这里</button>
     </template>
   </Modal>
+
+  <Modal
+    v-if="freeOpen"
+    class="free-dictation-dialog"
+    title="自由练习"
+    description="选择词书和范围，只听发音写出英文。自由练习不写听写进度。"
+    @close="freeOpen = false"
+  >
+    <div class="free-dictation-form">
+      <div class="section-line"><h3>词书</h3></div>
+      <div v-if="activeBooks.length" class="free-dictation-options">
+        <label v-for="book in activeBooks" :key="book.id">
+          <input v-model="freeBooks" type="checkbox" :value="book.id" />
+          <span>{{ book.name }}</span>
+          <small v-if="book.dictation">听写</small>
+        </label>
+      </div>
+      <p v-else class="muted">还没有启用的词书。</p>
+
+      <div class="section-line"><h3>范围</h3></div>
+      <div class="free-dictation-options free-dictation-ranges">
+        <label v-for="item in DICTATION_RANGES" :key="item.id">
+          <input v-model="freeRange" type="radio" :value="item.id" />
+          <span>{{ item.label }}</span>
+        </label>
+      </div>
+
+      <label class="field free-dictation-size">
+        <span>每组数量</span>
+        <select v-model="freeSize">
+          <option :value="10">10</option>
+          <option :value="15">15</option>
+          <option :value="20">20</option>
+          <option :value="30">30</option>
+        </select>
+      </label>
+      <p class="muted free-dictation-count">
+        本次可选 {{ freeQueue.length }} 个词。
+      </p>
+    </div>
+    <template #footer>
+      <button @click="freeOpen = false">取消</button>
+      <button
+        class="primary"
+        :disabled="!freeQueue.length"
+        @click="startFreePractice"
+      >
+        开始听写
+      </button>
+    </template>
+  </Modal>
 </template>
 
 <style scoped>
+.study-tasks-line { margin-top: 0; }
+.dictation-line { margin-top: 28px; }
+.dictation-grid { margin-bottom: 24px; }
+.dictation-inline {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+}
+.free-dictation-form {
+  display: grid;
+  gap: 6px;
+}
+.free-dictation-form .section-line {
+  margin-top: 10px;
+  border-bottom: 1px solid var(--line);
+  padding-bottom: 10px;
+}
+.free-dictation-form h3 {
+  font-size: 14px;
+}
+.free-dictation-options {
+  display: grid;
+  gap: 8px;
+  margin-top: 12px;
+}
+.free-dictation-options label {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 34px;
+  font-size: 14px;
+}
+.free-dictation-options small {
+  padding: 2px 7px;
+  border-radius: 4px;
+  background: var(--panel);
+  color: var(--muted);
+  font-size: 11px;
+}
+.free-dictation-ranges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 20px;
+}
+.free-dictation-size {
+  margin-top: 16px;
+}
+.free-dictation-size select {
+  width: 100px;
+}
+.free-dictation-count {
+  margin-top: 12px;
+  font-size: 13px;
+}
 .today-page > .page-head { position: relative; }
 .today-date {
   position: absolute;
