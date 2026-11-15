@@ -1,31 +1,37 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { meaningChoices, newCard } from "../src/core/content.js";
+import { newCard } from "../src/features/library/model.js";
+import { meaningChoices } from "../src/features/study/choices.js";
+import { loadLibrary, state } from "../src/storage/store.js";
 import {
-  loadLibrary, saveLearnCheckpoint, saveStudyResult, state, undoStudyResult,
-} from "../src/core/library.js";
+  saveLearnCheckpoint,
+  saveStudyResult,
+  undoStudyResult,
+} from "../src/features/study/actions.js";
 import {
-  answerDictation,
   answerQuestion,
-  continueDictation,
   continueQuestion,
-  createDictationSession,
   createLearnSession,
   createReviewSession,
   currentEntry,
-  dictationSummary,
-  dictationTarget,
   matchSpelling,
-  replayDictation,
   resumeLearnCheckpoint,
   showAnswerDetail,
-  skipDictation,
   skipSpelling,
   skipWord,
   spell,
   spellTarget,
   startSpelling,
-} from "../src/core/session.js";
+} from "../src/features/study/session.js";
+import {
+  answerDictation,
+  continueDictation,
+  createDictationSession,
+  dictationSummary,
+  dictationTarget,
+  replayDictation,
+  skipDictation,
+} from "../src/features/dictation/session.js";
 
 const cards = (...ids) => ids.map((id) => ({ id }));
 

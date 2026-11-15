@@ -1,8 +1,9 @@
 <script setup>
 import { reactive, ref, watch } from "vue";
-import { state, updateSettings } from "../../core/library.js";
-import { notify } from "../../core/notifications.js";
-import { RETENTION_OPTIONS, validRetention } from "../../core/recycle-bin.js";
+import { state } from "../../storage/store.js";
+import { updateSettings } from "./actions.js";
+import { notify } from "../../shared/notifications.js";
+import { RETENTION_OPTIONS, validRetention } from "../trash/model.js";
 import Icon from "../../shared/Icon.vue";
 const values = reactive({ ...state.settings });
 const errors = reactive({});

@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { bookStats, freshQueue, isDue } from "../src/core/books.js";
+import { bookStats } from "../src/features/books/model.js";
+import { isDue } from "../src/features/study/model.js";
+import { freshQueue } from "../src/features/study/tasks.js";
 
 const card = (id, progress = {}) => ({
   id,

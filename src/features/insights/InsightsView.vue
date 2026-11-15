@@ -1,7 +1,7 @@
 <script setup>
 import { computed, nextTick, onMounted, onUnmounted, ref } from "vue";
-import { state } from "../../core/library.js";
-import { streakOf, todayLabel } from "../../core/stats.js";
+import { state } from "../../storage/store.js";
+import { streakOf, todayLabel } from "./stats.js";
 import Icon from "../../shared/Icon.vue";
 import LearningCalendar from "./LearningCalendar.vue";
 import ExportStudyStatusDialog from "./ExportStudyStatusDialog.vue";

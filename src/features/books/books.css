@@ -1,0 +1,120 @@
+/* Books */
+/* Books and library */
+.book-list,
+.word-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.book-group > h2 {
+  margin-block: 24px 8px;
+}
+.book-item {
+  padding: 24px 0 28px;
+  border-bottom: 1px solid var(--line);
+}
+.book-item:first-child {
+  border-top: 1px solid var(--line);
+}
+.book-item-head {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  justify-content: space-between;
+  margin-bottom: 24px;
+}
+.book-open {
+  flex: 1;
+  min-width: 0;
+  justify-content: flex-start;
+  text-align: left;
+  height: auto;
+  border: 0;
+  padding: 0;
+  white-space: normal;
+  gap: 16px;
+  background: transparent;
+}
+.book-open:hover:not(:disabled) {
+  background: transparent;
+}
+.book-open > span:nth-child(2) {
+  min-width: 0;
+}
+.book-open strong {
+  display: block;
+  font-size: 17px;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+.book-open small {
+  display: block;
+  font-size: 12px;
+  color: var(--muted);
+  font-weight: 400;
+  margin-top: 5px;
+}
+.book-open > svg:last-child {
+  color: var(--muted);
+  opacity: 0;
+  transition: opacity 160ms ease;
+}
+.book-open:is(:hover, :focus-visible) > svg:last-child {
+  opacity: 1;
+}
+.book-cover {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 52px;
+  height: 60px;
+  background: var(--panel);
+  border-radius: 8px;
+  color: var(--muted);
+}
+.book-item-controls {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: none;
+}
+.toggle {
+  height: 34px;
+  padding-inline: 8px;
+  background: transparent;
+  border-color: transparent;
+  font-size: 12px;
+  color: var(--muted);
+}
+.switch-track {
+  display: flex;
+  align-items: center;
+  width: 26px;
+  height: 16px;
+  padding: 2px;
+  border-radius: 10px;
+  background: var(--line-strong);
+}
+.switch-track i {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: var(--bg);
+  transition: transform 160ms ease;
+}
+.toggle.on .switch-track {
+  background: var(--ink);
+}
+.toggle.on .switch-track i {
+  transform: translateX(10px);
+}
+.book-progress-copy {
+  display: flex;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 10px;
+  font-size: 12px;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}

@@ -3,8 +3,9 @@ import test from "node:test";
 import {
   createNotificationCenter,
   notifications,
-} from "../src/core/notifications.js";
-import { setNotice, setError, state } from "../src/core/library.js";
+  notify,
+} from "../src/shared/notifications.js";
+import { setError, state } from "../src/storage/store.js";
 
 function fixture() {
   let time = 0;
@@ -145,7 +146,7 @@ test("existing global callers use toast while blocking startup errors stay recov
   notifications.clear();
   state.ready = true;
   state.error = "";
-  setNotice("已删除。");
+  notify.success("已删除。");
   setError("保存失败");
   assert.deepEqual(
     notifications.visible.value.map((item) => item.type),

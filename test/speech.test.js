@@ -6,7 +6,7 @@ import {
   newSpeechToken,
   normalizeSpeechText,
   speechErrorMessage,
-} from "../src/core/speech.js";
+} from "../src/features/speech/speech.js";
 
 test("speech accents use exact BCP-47 language tags", () => {
   assert.deepEqual(

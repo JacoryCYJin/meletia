@@ -5,13 +5,15 @@ import {
   definitionOf,
   hasTag,
   idFor,
-  migrateStore,
   parseSenses,
   senseLine,
   splitTags,
-  STORE_VERSION,
   wordKey,
-} from "../src/core/content.js";
+} from "../src/features/library/model.js";
+import {
+  migrateStore,
+  STORE_VERSION,
+} from "../src/storage/migrate.js";
 
 test("tags split on the same separators and match whole entries", () => {
   assert.deepEqual(splitTags("听辨, 拼写，阅读；写作"), ["听辨", "拼写", "阅读", "写作"]);

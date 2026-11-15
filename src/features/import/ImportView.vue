@@ -1,237 +1,53 @@
 <script setup>
-import { computed, reactive, ref, shallowRef, watch } from "vue";
 import Icon from "../../shared/Icon.vue";
-import {
-  hasKnownHeader,
-  mapRows,
-  parseTable,
-  previewImport,
-  suggestMapping,
-} from "../../core/importer.js";
-import { cardsInImportTarget, importCards, state } from "../../core/library.js";
-import { splitTags } from "../../core/content.js";
+import ColumnMapping from "./components/ColumnMapping.vue";
+import ConflictResolver from "./components/ConflictResolver.vue";
+import ImportFilters from "./components/ImportFilters.vue";
+import { useImportFlow } from "./useImportFlow.js";
 
 const emit = defineEmits(["close"]);
-
-const requiredFields = reactive(
-  [
-    { id: "word", label: "词条一", defaultName: "单词" },
-    { id: "definition", label: "词条二", defaultName: "释义" },
-  ].map((field) => ({ ...field, name: field.defaultName })),
-);
-const extraFieldLabels = ["词条三", "词条四", "词条五", "词条六"];
-const optionalFields = [
-  { id: "source", label: "来源" },
-  { id: "tags", label: "标签" },
-  { id: "status", label: "掌握状态" },
-  { id: "date", label: "记录日期" },
-];
-const delimiters = [
-  { value: ",", label: "逗号" },
-  { value: "\t", label: "制表符" },
-  { value: ";", label: "分号" },
-];
-
-const fileName = ref("");
-const fileText = ref("");
-const delimiter = ref("");
-const table = shallowRef(null);
-const hasHeader = ref(false);
-const mapping = ref({});
-const extraMappings = ref([]);
-let nextMappingId = 0;
-const filters = ref({ status: "", source: "", tags: "", date: "" });
-const destination = ref("new");
-const bookName = ref("");
-const busy = ref(false);
-const error = ref("");
-const showRaw = ref(false);
-const step = ref("configure");
-const completed = ref(null);
-const dragging = ref(false);
-const resolutions = ref(Object.create(null));
-
-const columns = computed(() =>
-  Array.from({ length: table.value?.width ?? 0 }, (_, index) => {
-    const position = `第 ${index + 1} 列`;
-    const heading = hasHeader.value ? table.value.data[0]?.[index]?.trim() : "";
-    return {
-      index,
-      label: heading || position,
-      rawLabel: heading ? `${position} · ${heading}` : position,
-    };
-  }),
-);
-const mappingColumns = computed(() => {
-  const labels = new Map();
-  for (const column of columns.value)
-    labels.set(column.label, (labels.get(column.label) ?? 0) + 1);
-  return columns.value.map((column) => ({
-    ...column,
-    label: labels.get(column.label) > 1 ? column.rawLabel : column.label,
-  }));
-});
-const sample = computed(
-  () =>
-    table.value?.data.slice(hasHeader.value ? 1 : 0, hasHeader.value ? 6 : 5) ??
-    [],
-);
-const selectedMapping = computed(() => ({
-  ...mapping.value,
-  ...Object.fromEntries(
-    extraMappings.value
-      .filter(({ property, column }) => property && column >= 0)
-      .map(({ property, column }) => [property, column]),
-  ),
-}));
-const rows = computed(() =>
-  table.value
-    ? mapRows(table.value.data, hasHeader.value, selectedMapping.value)
-    : [],
-);
-const filterOptions = computed(() =>
-  Object.fromEntries(
-    ["status", "source"].map((field) => [
-      field,
-      [...new Set(rows.value.map((row) => row[field]).filter(Boolean))].sort(),
-    ]).concat([
-      ["tags", [...new Set(rows.value.flatMap((row) => splitTags(row.tags)))].sort()],
-    ]),
-  ),
-);
-const validMapping = computed(
-  () =>
-    mapping.value.word >= 0 &&
-    mapping.value.definition >= 0 &&
-    mapping.value.word !== mapping.value.definition,
-);
-const preview = computed(() => {
-  if (!table.value || !validMapping.value) return null;
-  const existing =
-    destination.value === "new" ? [] : cardsInImportTarget(destination.value);
-  return previewImport(rows.value, existing, filters.value, resolutions.value);
-});
-watch(
-  [destination, rows, filters],
-  () => {
-    resolutions.value = Object.create(null);
-  },
-  { deep: true },
-);
-const importCount = computed(
-  () =>
-    (preview.value?.added.length ?? 0) + (preview.value?.updated.length ?? 0),
-);
-const incompleteMapping = computed(() =>
-  extraMappings.value.some(({ property, column }) => !property || column < 0),
-);
-const canImport = computed(
-  () =>
-    importCount.value &&
-    !incompleteMapping.value &&
-    (destination.value !== "new" || bookName.value.trim()),
-);
-
-function addMapping() {
-  extraMappings.value.push({ id: nextMappingId++, property: "", column: -1 });
-}
-
-function clearFilter(property) {
-  if (Object.hasOwn(filters.value, property)) filters.value[property] = "";
-}
-
-function setProperty(row, property) {
-  clearFilter(row.property);
-  row.property = property;
-  if (row.column < 0) {
-    row.column = suggestMapping(table.value, hasHeader.value)[property] ?? -1;
-  }
-}
-
-function removeMapping(row) {
-  clearFilter(row.property);
-  extraMappings.value = extraMappings.value.filter(
-    (item) => item.id !== row.id,
-  );
-}
-
-function resetMapping() {
-  const suggested = suggestMapping(table.value, hasHeader.value);
-  mapping.value = { word: suggested.word, definition: suggested.definition };
-  for (const row of extraMappings.value) {
-    row.column = suggested[row.property] ?? -1;
-  }
-  filters.value = { status: "", source: "", tags: "", date: "" };
-}
-
-function parseFile(detectHeader = false) {
-  table.value = null;
-  error.value = "";
-  try {
-    table.value = parseTable(fileText.value, delimiter.value);
-    if (detectHeader) hasHeader.value = hasKnownHeader(table.value.data[0]);
-    resetMapping();
-  } catch (cause) {
-    error.value = String(cause);
-  }
-}
-
-async function readFile(file) {
-  if (!file || busy.value) return;
-  busy.value = true;
-  error.value = "";
-  table.value = null;
-  fileName.value = "";
-  showRaw.value = false;
-  step.value = "configure";
-  extraMappings.value = [];
-  try {
-    fileText.value = await file.text();
-    fileName.value = file.name;
-    delimiter.value = "";
-    bookName.value = file.name.replace(/\.[^.]+$/, "").trim();
-    destination.value = "new";
-    parseFile(true);
-  } catch (cause) {
-    error.value = String(cause);
-  } finally {
-    busy.value = false;
-  }
-}
-
-async function confirm() {
-  if (!canImport.value || busy.value || state.busy) return;
-  busy.value = true;
-  error.value = "";
-  try {
-    const target =
-      destination.value === "new"
-        ? { name: bookName.value }
-        : { bookId: destination.value };
-    const updates = preview.value.updated.length;
-    const duplicates = preview.value.duplicates;
-    const added = await importCards(rows.value, target, {
-      filters: filters.value,
-      resolutions: resolutions.value,
-      fileName: fileName.value,
-    });
-    completed.value = {
-      added,
-      updated: updates,
-      duplicates,
-      createdAt: state.importBatches.at(-1)?.createdAt,
-      book:
-        destination.value === "new"
-          ? bookName.value
-          : state.books.find((b) => b.id === destination.value)?.name,
-    };
-    step.value = "complete";
-  } catch (cause) {
-    error.value = String(cause);
-  } finally {
-    busy.value = false;
-  }
-}
+const {
+  requiredFields,
+  extraFieldLabels,
+  optionalFields,
+  delimiters,
+  fileName,
+  table,
+  hasHeader,
+  mapping,
+  extraMappings,
+  filters,
+  destination,
+  bookName,
+  books,
+  targetName,
+  busy,
+  error,
+  showRaw,
+  step,
+  completed,
+  dragging,
+  resolutions,
+  columns,
+  mappingColumns,
+  sample,
+  selectedMapping,
+  rows,
+  filterOptions,
+  validMapping,
+  preview,
+  importCount,
+  incompleteMapping,
+  canImport,
+  addMapping,
+  clearFilter,
+  setProperty,
+  removeMapping,
+  resetMapping,
+  parseFile,
+  readFile,
+  confirm,
+} = useImportFlow();
 </script>
 
 <template>
@@ -342,7 +158,7 @@ async function confirm() {
             <select v-model="destination" aria-label="目标词书">
               <option value="new">新建词书</option>
               <option
-                v-for="book in state.books"
+                v-for="book in books"
                 :key="book.id"
                 :value="book.id"
               >
@@ -377,125 +193,25 @@ async function confirm() {
         </div>
 
         <template v-if="table && columns.length">
-          <div
+          <ColumnMapping
             v-if="step === 'configure'"
-            class="import-mappings"
-            aria-label="词条映射"
-          >
-            <div class="import-mapping-row import-mapping-head">
-              <span></span>
-              <span>CSV 源列</span>
-              <span>→ 导入属性</span>
-            </div>
-            <div
-              v-for="field in requiredFields"
-              :key="field.id"
-              class="import-mapping-row"
-            >
-              <span>{{ field.label }}</span>
-              <label class="import-field">
-                <select
-                  v-model="mapping[field.id]"
-                  :aria-label="field.label + '的源列'"
-                >
-                  <option :value="-1">选择一列</option>
-                  <option
-                    v-for="column in mappingColumns"
-                    :key="column.index"
-                    :value="column.index"
-                  >
-                    {{ column.label }}
-                  </option>
-                </select>
-              </label>
-              <label class="import-mapping-property">
-                <input
-                  v-model="field.name"
-                  type="text"
-                  :aria-label="field.label + '的显示名称'"
-                  :placeholder="field.defaultName"
-                />
-                <small>必填</small>
-              </label>
-            </div>
+            :required-fields="requiredFields"
+            :extra-field-labels="extraFieldLabels"
+            :optional-fields="optionalFields"
+            :mapping="mapping"
+            :extra-mappings="extraMappings"
+            :mapping-columns="mappingColumns"
+            :valid-mapping="validMapping"
+            :incomplete-mapping="incompleteMapping"
+            :destination="destination"
+            :book-name="bookName"
+            @add="addMapping"
+            @remove="removeMapping"
+            @set-property="setProperty"
+            @clear-filter="clearFilter"
+          />
 
-            <div
-              v-for="(row, index) in extraMappings"
-              :key="row.id"
-              class="import-mapping-row"
-            >
-              <span>{{ extraFieldLabels[index] }}</span>
-              <label class="import-field">
-                <select
-                  v-model="row.column"
-                  :aria-label="extraFieldLabels[index] + '的源列'"
-                  @change="clearFilter(row.property)"
-                >
-                  <option :value="-1">选择一列</option>
-                  <option
-                    v-for="column in mappingColumns"
-                    :key="column.index"
-                    :value="column.index"
-                  >
-                    {{ column.label }}
-                  </option>
-                </select>
-              </label>
-              <label class="import-field">
-                <select
-                  :value="row.property"
-                  :aria-label="extraFieldLabels[index] + '的属性'"
-                  @change="setProperty(row, $event.target.value)"
-                >
-                  <option value="">选择属性</option>
-                  <option
-                    v-for="field in optionalFields"
-                    :key="field.id"
-                    :value="field.id"
-                    :disabled="
-                      extraMappings.some(
-                        (item) =>
-                          item.id !== row.id && item.property === field.id,
-                      )
-                    "
-                  >
-                    {{ field.label }}
-                  </option>
-                </select>
-              </label>
-              <button
-                type="button"
-                class="ghost import-remove-mapping"
-                :aria-label="'删除' + extraFieldLabels[index]"
-                @click="removeMapping(row)"
-              >
-                <Icon name="close" :size="14" />
-              </button>
-            </div>
-
-            <button
-              v-if="extraMappings.length < optionalFields.length"
-              type="button"
-              class="ghost import-add-mapping"
-              @click="addMapping"
-            >
-              <Icon name="plus" :size="14" /> 添加词条
-            </button>
-            <p v-if="!validMapping" class="field-error" role="status">
-              请选择两个不同的源列，分别对应单词和释义。
-            </p>
-            <p
-              v-if="destination === 'new' && !bookName.trim()"
-              class="field-error"
-            >
-              请填写新词书名称。
-            </p>
-            <p v-if="incompleteMapping" class="muted import-empty">
-              请选择新增词条的属性和源列，或删除该条映射。
-            </p>
-          </div>
-
-          <div
+          <ImportFilters
             v-if="
               step === 'configure' &&
               (filterOptions.status.length ||
@@ -503,92 +219,23 @@ async function confirm() {
                 filterOptions.tags.length ||
                 selectedMapping.date >= 0)
             "
-            class="import-fields"
-          >
-            <label v-if="filterOptions.status.length" class="import-field">
-              <span>筛选掌握状态</span>
-              <select v-model="filters.status">
-                <option value="">全部</option>
-                <option v-for="status in filterOptions.status" :key="status">
-                  {{ status }}
-                </option>
-              </select>
-            </label>
-            <label v-if="filterOptions.source.length" class="import-field">
-              <span>筛选来源</span>
-              <select v-model="filters.source">
-                <option value="">全部</option>
-                <option v-for="source in filterOptions.source" :key="source">
-                  {{ source }}
-                </option>
-              </select>
-            </label>
-            <label v-if="filterOptions.tags.length" class="import-field">
-              <span>筛选标签</span>
-              <select v-model="filters.tags">
-                <option value="">全部</option>
-                <option v-for="tag in filterOptions.tags" :key="tag">
-                  {{ tag }}
-                </option>
-              </select>
-            </label>
-            <label v-if="selectedMapping.date >= 0" class="import-field">
-              <span>筛选日期</span>
-              <input v-model="filters.date" type="date" />
-            </label>
-          </div>
+            :filter-options="filterOptions"
+            :filters="filters"
+            :selected-mapping="selectedMapping"
+            @update:filters="filters = $event"
+          />
 
-          <section
+          <ConflictResolver
             v-if="step === 'review' && preview?.conflicts.length"
-            class="import-conflicts"
-            aria-labelledby="import-conflicts-title"
-          >
-            <h2 id="import-conflicts-title">选择释义版本</h2>
-            <p class="muted">
-              同一个词有不同释义。每个词选择一个版本，默认采用最后一个导入版本。
-            </p>
-            <fieldset
-              v-for="conflict in preview.conflicts"
-              :key="conflict.key"
-              class="import-conflict"
-            >
-              <legend>{{ conflict.term }}</legend>
-              <div class="import-versions">
-                <label
-                  v-for="(version, index) in conflict.versions"
-                  :key="index"
-                  class="import-version"
-                  :class="{ selected: conflict.selected === index }"
-                >
-                  <span>
-                    <input
-                      type="radio"
-                      :name="'import-version-' + conflict.key"
-                      :value="index"
-                      :checked="conflict.selected === index"
-                      @change="resolutions[conflict.key] = $event.target.value"
-                    />
-                    <strong>{{
-                      version.row
-                        ? "导入版本 " + (conflict.card ? index : index + 1)
-                        : "当前版本"
-                    }}</strong>
-                    <small v-if="conflict.selected === index">将采用</small>
-                  </span>
-                  <span class="import-version-definition">{{
-                    version.definition
-                  }}</span>
-                </label>
-              </div>
-            </fieldset>
-          </section>
+            :conflicts="preview.conflicts"
+            :resolutions="resolutions"
+            @update:resolutions="resolutions = $event"
+          />
 
           <div v-if="step === 'review'" class="import-review-summary">
             <h3>
               即将导入「{{
-                destination === "new"
-                  ? bookName
-                  : state.books.find((b) => b.id === destination)?.name
+                targetName
               }}」
             </h3>
             <p>

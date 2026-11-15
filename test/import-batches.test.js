@@ -1,21 +1,23 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { STORE_VERSION, migrateStore } from "../src/core/content.js";
+import { STORE_VERSION, migrateStore } from "../src/storage/migrate.js";
+import { loadLibrary, state } from "../src/storage/store.js";
 import {
-  state,
-  loadLibrary,
   createBook,
+  deleteBook,
+  mergeBooks,
+} from "../src/features/books/actions.js";
+import {
   importCards,
-  saveCard,
-  saveStudyResult,
-  saveLearnCheckpoint,
   previewImportUndo,
   undoImportBatch,
-  deleteCard,
-  mergeBooks,
-  deleteBook,
-} from "../src/core/library.js";
-import { createLearnSession } from "../src/core/session.js";
+} from "../src/features/import/actions.js";
+import { deleteCard, saveCard } from "../src/features/library/actions.js";
+import {
+  saveLearnCheckpoint,
+  saveStudyResult,
+} from "../src/features/study/actions.js";
+import { createLearnSession } from "../src/features/study/session.js";
 
 async function setup() {
   const values = new Map();

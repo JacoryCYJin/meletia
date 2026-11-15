@@ -1,9 +1,31 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { state, loadLibrary, createBook, importCards, deleteCard, deleteBook, restoreTrash, purgeTrash, emptyTrash, cleanupTrash, updateSettings, saveStudyResult, previewImportUndo, saveLearnCheckpoint, updateBook, undoImportBatch } from "../src/core/library.js";
-import { STORE_VERSION, migrateStore } from "../src/core/content.js";
-import { DAY_MS, isTrashExpired } from "../src/core/recycle-bin.js";
-import { createLearnSession } from "../src/core/session.js";
+import { loadLibrary, state } from "../src/storage/store.js";
+import {
+  createBook,
+  deleteBook,
+  updateBook,
+} from "../src/features/books/actions.js";
+import {
+  importCards,
+  previewImportUndo,
+  undoImportBatch,
+} from "../src/features/import/actions.js";
+import { deleteCard } from "../src/features/library/actions.js";
+import {
+  cleanupTrash,
+  emptyTrash,
+  purgeTrash,
+  restoreTrash,
+} from "../src/features/trash/actions.js";
+import {
+  saveLearnCheckpoint,
+  saveStudyResult,
+} from "../src/features/study/actions.js";
+import { updateSettings } from "../src/features/settings/actions.js";
+import { STORE_VERSION, migrateStore } from "../src/storage/migrate.js";
+import { DAY_MS, isTrashExpired } from "../src/features/trash/model.js";
+import { createLearnSession } from "../src/features/study/session.js";
 
 const clone = value => JSON.parse(JSON.stringify(value));
 async function setup() {

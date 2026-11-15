@@ -1,10 +1,18 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import Papa from "papaparse";
-import { parseTable, hasKnownHeader } from "../src/core/importer.js";
-import { createCsvPreviewCards, previewMappingError, selectCsvPreviewRows, suggestCsvPreviewMapping } from "../src/core/csv-preview.js";
-import { createBrowseSession, moveBrowse } from "../src/core/browse.js";
-import { loadLibrary, state } from "../src/core/library.js";
+import { hasKnownHeader, parseTable } from "../src/features/import/csv.js";
+import {
+  createCsvPreviewCards,
+  previewMappingError,
+  selectCsvPreviewRows,
+  suggestCsvPreviewMapping,
+} from "../src/features/import/preview.js";
+import {
+  createBrowseSession,
+  moveBrowse,
+} from "../src/features/library/browse.js";
+import { loadLibrary, state } from "../src/storage/store.js";
 
 const data = [
   ["单词", "中文释义", "来源", "学习重点", "掌握状态", "记录日期"],

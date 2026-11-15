@@ -1,0 +1,81 @@
+/* Settings and learning records */
+.settings-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 210px;
+  gap: 56px;
+  align-items: start;
+}
+.settings-section > .section-line {
+  padding-bottom: 16px;
+  border-bottom: 1px solid var(--line);
+  margin-bottom: 0;
+}
+.setting-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 28px;
+  padding-block: 26px;
+  border-bottom: 1px solid var(--line);
+}
+.setting-row label {
+  font-size: 14px;
+  font-weight: 500;
+}
+.setting-row p {
+  font-size: 12px;
+  color: var(--muted);
+  margin-top: 8px;
+  max-width: 34ch;
+}
+.setting-row .field-error {
+  color: var(--danger);
+}
+.setting-value {
+  width: 150px;
+  flex: none;
+}
+.number-unit {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+.number-unit :is(input, select) {
+  width: 85px;
+}
+.number-unit > span {
+  color: var(--muted);
+  font-size: 11px;
+  white-space: nowrap;
+}
+.save-status {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  height: 20px;
+  margin-top: 6px;
+  color: var(--success);
+  font-size: 11px;
+}
+.save-status button {
+  font-size: inherit;
+  color: var(--danger);
+}
+.settings-aside {
+  padding: 20px;
+  background: var(--panel);
+  border-radius: 12px;
+  color: var(--muted);
+}
+.settings-aside h3 {
+  margin-block: 12px 10px;
+  color: var(--ink);
+  font-size: 13px;
+}
+.settings-aside p {
+  font-size: 12px;
+  line-height: 1.8;
+}
+.settings-aside p + p {
+  margin-top: 16px;
+}
