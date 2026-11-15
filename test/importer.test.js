@@ -1,7 +1,13 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { hasKnownHeader, mapRows, parseTable, previewImport, suggestMapping } from "../src/core/importer.js";
-import { newCard } from "../src/core/content.js";
+import {
+  hasKnownHeader,
+  mapRows,
+  parseTable,
+  previewImport,
+  suggestMapping,
+} from "../src/features/import/csv.js";
+import { newCard } from "../src/features/library/model.js";
 import { computed, reactive } from "vue";
 
 function parseWords(text) {

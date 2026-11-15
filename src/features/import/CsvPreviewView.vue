@@ -1,9 +1,15 @@
 <script setup>
 import { computed, onBeforeUnmount, ref, shallowRef, watch } from "vue";
-import { hasKnownHeader, mapRows, parseTable } from "../../core/importer.js";
-import { CSV_PREVIEW_FIELDS, createCsvPreviewCards, previewMappingError, selectCsvPreviewRows, suggestCsvPreviewMapping } from "../../core/csv-preview.js";
-import { splitTags } from "../../core/content.js";
-import ReadOnlyCards from "../../shared/ReadOnlyCards.vue";
+import { hasKnownHeader, mapRows, parseTable } from "./csv.js";
+import {
+  CSV_PREVIEW_FIELDS,
+  createCsvPreviewCards,
+  previewMappingError,
+  selectCsvPreviewRows,
+  suggestCsvPreviewMapping,
+} from "./preview.js";
+import { splitTags } from "../library/model.js";
+import ReadOnlyCards from "./components/ReadOnlyCards.vue";
 import Icon from "../../shared/Icon.vue";
 
 const emit = defineEmits(["close"]);

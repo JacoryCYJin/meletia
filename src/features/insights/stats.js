@@ -1,0 +1,109 @@
+import { localDay } from "../../shared/date.js";
+
+export function todayLabel(cards, reviews, now = new Date()) {
+  const today = localDay(now);
+  return {
+    introducedToday: cards.filter(
+      (card) => card.progress.introducedOn === today,
+    ).length,
+    reviewedToday: reviews.filter(
+      (entry) => localDay(new Date(entry.at)) === today,
+    ).length,
+  };
+}
+
+export function streakOf(reviews, now = new Date()) {
+  const days = new Set(reviews.map((entry) => localDay(new Date(entry.at))));
+  if (!days.size) return 0;
+
+  const cursor = new Date(now);
+  if (!days.has(localDay(cursor))) {
+    cursor.setDate(cursor.getDate() - 1);
+    if (!days.has(localDay(cursor))) return 0;
+  }
+
+  let streak = 0;
+  while (days.has(localDay(cursor))) {
+    streak += 1;
+    cursor.setDate(cursor.getDate() - 1);
+  }
+  return streak;
+}
+
+export function recentDays(reviews, now = new Date(), length = 14) {
+  const counts = new Map();
+  for (const entry of reviews) {
+    const day = localDay(new Date(entry.at));
+    counts.set(day, (counts.get(day) ?? 0) + 1);
+  }
+
+  const days = [];
+  for (let offset = length - 1; offset >= 0; offset -= 1) {
+    const date = new Date(now);
+    date.setDate(date.getDate() - offset);
+    const day = localDay(date);
+    days.push({ day, count: counts.get(day) ?? 0 });
+  }
+  return days;
+}
+
+export function learningCalendar(reviews, now = new Date()) {
+  // Calendar arithmetic at local noon avoids DST midnight and fixed-hour offsets.
+  const end = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 12);
+  const previousYear = end.getFullYear() - 1;
+  const lastDay = new Date(previousYear, end.getMonth() + 1, 0).getDate();
+  const start = new Date(
+    previousYear,
+    end.getMonth(),
+    Math.min(end.getDate(), lastDay) + 1,
+    12,
+  );
+  const startDay = localDay(start);
+  const endDay = localDay(end);
+  const counts = new Map();
+  for (const entry of reviews) {
+    const date = new Date(entry.at);
+    if (!Number.isFinite(date.getTime())) continue;
+    const key = localDay(date);
+    if (key >= startDay && key <= endDay) {
+      counts.set(key, (counts.get(key) ?? 0) + 1);
+    }
+  }
+  const cursor = new Date(start);
+  cursor.setDate(cursor.getDate() - cursor.getDay());
+  const weeks = [];
+  const months = [];
+  let previousMonth = "";
+  while (cursor <= end) {
+    const week = [];
+    for (let weekday = 0; weekday < 7; weekday += 1) {
+      const day = localDay(cursor);
+      const inRange = day >= startDay && day <= endDay;
+      const count = inRange ? counts.get(day) ?? 0 : 0;
+      const level =
+        count === 0 ? 0 : count < 10 ? 1 : count < 30 ? 2 : count < 60 ? 3 : 4;
+      week.push({ day, weekday, count, level, inRange });
+      const month = day.slice(0, 7);
+      if (inRange && month !== previousMonth) {
+        if (months.at(-1)?.column === weeks.length) months.pop();
+        months.push({
+          key: month,
+          label: `${cursor.getMonth() + 1}月`,
+          column: weeks.length,
+        });
+        previousMonth = month;
+      }
+      cursor.setDate(cursor.getDate() + 1);
+    }
+    weeks.push(week);
+  }
+  return {
+    start: startDay,
+    end: endDay,
+    weeks,
+    months: months.map((month, index) => ({
+      ...month,
+      span: (months[index + 1]?.column ?? weeks.length) - month.column,
+    })),
+  };
+}

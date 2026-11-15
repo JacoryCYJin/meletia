@@ -8,7 +8,7 @@ import {
   nextStep,
   stageForStep,
   stepForDays,
-} from "../src/core/scheduler.js";
+} from "../src/features/study/scheduler.js";
 
 test("the review ladder starts at one day and ends at four months", () => {
   assert.deepEqual(LADDER, [1, 2, 4, 7, 15, 30, 60, 120]);

@@ -1,18 +1,19 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { newCard } from "../src/core/content.js";
+import { newCard } from "../src/features/library/model.js";
+import { loadLibrary, state } from "../src/storage/store.js";
 import {
-  cardsInImportTarget,
   createBook,
   deleteBook,
-  importCards,
-  loadLibrary,
   mergeBooks,
   previewBookMerge,
-  saveCard,
-  saveStudyResult,
-  state,
-} from "../src/core/library.js";
+} from "../src/features/books/actions.js";
+import {
+  cardsInImportTarget,
+  importCards,
+} from "../src/features/import/actions.js";
+import { saveCard } from "../src/features/library/actions.js";
+import { saveStudyResult } from "../src/features/study/actions.js";
 
 test("reimport only adds new words in the selected book and preserves independent cards", async () => {
   let stored = null;

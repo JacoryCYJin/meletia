@@ -1,16 +1,11 @@
 <script setup>
 import { computed, onMounted, onUnmounted, ref } from "vue";
-import { cardById, saveDictationResult, state } from "../../core/library.js";
-import { bookStats } from "../../core/books.js";
-import { dayTasks } from "../../core/stats.js";
-import {
-  DICTATION_RANGES,
-  buildFreeDictationQueue,
-  dictationTasks,
-} from "../../core/dictation.js";
-import { createDictationSession } from "../../core/session.js";
+import { state } from "../../storage/store.js";
+import { bookStats } from "../books/model.js";
+import { dayTasks } from "../study/tasks.js";
 import DictationPanel from "../dictation/DictationPanel.vue";
-import { useDictationRunner } from "../dictation/useDictationRunner.js";
+import FreePracticeDialog from "../dictation/FreePracticeDialog.vue";
+import { useTodayDictation } from "../dictation/useTodayDictation.js";
 import Icon from "../../shared/Icon.vue";
 import Modal from "../../shared/Modal.vue";
 
@@ -42,39 +37,26 @@ const tasks = computed(() =>
 const reviewTotal = computed(
   () => tasks.value.recall.length + tasks.value.review.length,
 );
-const dictation = computed(() =>
-  dictationTasks(
-    state.cards,
-    state.books,
-    state.settings,
-    now.value,
-    state.reviews,
-  ),
-);
-const dictationSize = computed(() =>
-  Number.isSafeInteger(state.settings.dictationGroupSize)
-    ? state.settings.dictationGroupSize
-    : 10,
-);
-const dictationSession = ref(null);
-const dictationKind = ref("fresh");
-const dictationQueueIds = ref([]);
-const freeOpen = ref(false);
-const freeBooks = ref([]);
-const freeRange = ref("all");
-const freeSize = ref(10);
+const activeBooks = computed(() => state.books.filter((b) => b.active));
 
-const runner = useDictationRunner({
+const dictationPractice = useTodayDictation(now, (active) =>
+  emit("dictation-active", active),
+);
+const {
+  tasks: dictation,
   session: dictationSession,
-  cardOf: cardById,
-  replayLimit: computed(() => state.settings.dictationReplays ?? 2),
-  saveCorrect: async (card) => {
-    if (dictationKind.value !== "free") await saveDictationResult(card, true);
-  },
-  saveWrong: async (card) => {
-    if (dictationKind.value !== "free") await saveDictationResult(card, false);
-  },
-});
+  freeOpen,
+  freeBooks,
+  freeRange,
+  freeSize,
+  freeQueue,
+  runner,
+  start: startDictation,
+  exit: exitDictation,
+  restart: restartDictation,
+  startFreePractice,
+  handleKey: onDictationKey,
+} = dictationPractice;
 const {
   answer: dictationAnswer,
   busy: dictationBusy,
@@ -90,91 +72,10 @@ const {
   changeAccent: changeDictationAccent,
   continueFeedback: continueDictation,
   skip: skipDictation,
-  handleKey: handleDictationKey,
 } = runner;
 
-const freeQueue = computed(() =>
-  buildFreeDictationQueue({
-    cards: state.cards,
-    books: state.books,
-    bookIds: freeBooks.value,
-    range: freeRange.value,
-    limit: freeSize.value,
-  }),
-);
-
-function startRound(ids, kind) {
-  if (!ids.length) return;
-  dictationKind.value = kind;
-  dictationQueueIds.value = ids;
-  dictationSession.value = createDictationSession(ids, ids.length);
-  runner.reset();
-  emit("dictation-active", true);
-}
-
-function startDictation(kind) {
-  const source = kind === "fresh" ? dictation.value.fresh : dictation.value.due;
-  startRound(
-    source.slice(0, dictationSize.value).map((item) => item.id),
-    kind,
-  );
-}
-
-function exitDictation() {
-  dictationSession.value = null;
-  emit("dictation-active", false);
-}
-
-function restartDictation() {
-  if (dictationKind.value === "free") {
-    startRound(dictationQueueIds.value, "free");
-    return;
-  }
-  const source =
-    dictationKind.value === "fresh" ? dictation.value.fresh : dictation.value.due;
-  const next = source.slice(0, dictationSize.value).map((item) => item.id);
-  if (!next.length) {
-    exitDictation();
-    return;
-  }
-  startRound(next, dictationKind.value);
-}
-
 function openFreePractice() {
-  const defaults = activeBooks.value.filter((book) => book.dictation === true);
-  freeBooks.value = (defaults.length ? defaults : activeBooks.value).map(
-    (book) => book.id,
-  );
-  freeRange.value = "all";
-  freeSize.value = dictationSize.value;
-  freeOpen.value = true;
-}
-
-function startFreePractice() {
-  const ids = freeQueue.value.map((item) => item.id);
-  if (!ids.length) return;
-  freeOpen.value = false;
-  startRound(ids, "free");
-}
-
-function onDictationKey(event) {
-  if (!dictationSession.value) return;
-  if (
-    event.isComposing ||
-    event.metaKey ||
-    event.ctrlKey ||
-    event.altKey ||
-    event.repeat
-  )
-    return;
-  if (dictationSession.value.phase === "dictation-finished") {
-    if (event.key === "Enter" && !event.target?.closest?.("button")) {
-      event.preventDefault();
-      restartDictation();
-    }
-    return;
-  }
-  handleDictationKey(event);
+  dictationPractice.openFreePractice(activeBooks.value);
 }
 
 const canLearn = computed(() =>
@@ -202,7 +103,6 @@ function continueNewWords() {
   emit("start", "learn", { extraNew: true });
 }
 
-const activeBooks = computed(() => state.books.filter((b) => b.active));
 const books = computed(() =>
   state.books
     .map((book) => ({ book, stats: bookStats(book, state.cards, now.value) }))
@@ -480,56 +380,19 @@ const summary = computed(() => {
     </template>
   </Modal>
 
-  <Modal
-    v-if="freeOpen"
-    class="free-dictation-dialog"
-    title="自由练习"
-    description="选择词书和范围，只听发音写出英文。自由练习不写听写进度。"
+  <FreePracticeDialog
+    :open="freeOpen"
+    :books="activeBooks"
+    :selected="freeBooks"
+    :range="freeRange"
+    :size="freeSize"
+    :count="freeQueue.length"
+    @update:selected="freeBooks = $event"
+    @update:range="freeRange = $event"
+    @update:size="freeSize = $event"
     @close="freeOpen = false"
-  >
-    <div class="free-dictation-form">
-      <div class="section-line"><h3>词书</h3></div>
-      <div v-if="activeBooks.length" class="free-dictation-options">
-        <label v-for="book in activeBooks" :key="book.id">
-          <input v-model="freeBooks" type="checkbox" :value="book.id" />
-          <span>{{ book.name }}</span>
-          <small v-if="book.dictation">听写</small>
-        </label>
-      </div>
-      <p v-else class="muted">还没有启用的词书。</p>
-
-      <div class="section-line"><h3>范围</h3></div>
-      <div class="free-dictation-options free-dictation-ranges">
-        <label v-for="item in DICTATION_RANGES" :key="item.id">
-          <input v-model="freeRange" type="radio" :value="item.id" />
-          <span>{{ item.label }}</span>
-        </label>
-      </div>
-
-      <label class="field free-dictation-size">
-        <span>每组数量</span>
-        <select v-model="freeSize">
-          <option :value="10">10</option>
-          <option :value="15">15</option>
-          <option :value="20">20</option>
-          <option :value="30">30</option>
-        </select>
-      </label>
-      <p class="muted free-dictation-count">
-        本次可选 {{ freeQueue.length }} 个词。
-      </p>
-    </div>
-    <template #footer>
-      <button @click="freeOpen = false">取消</button>
-      <button
-        class="primary"
-        :disabled="!freeQueue.length"
-        @click="startFreePractice"
-      >
-        开始听写
-      </button>
-    </template>
-  </Modal>
+    @start="startFreePractice"
+  />
 </template>
 
 <style scoped>
@@ -542,52 +405,6 @@ const summary = computed(() => {
   flex-direction: column;
   min-height: 0;
   overflow: hidden;
-}
-.free-dictation-form {
-  display: grid;
-  gap: 6px;
-}
-.free-dictation-form .section-line {
-  margin-top: 10px;
-  border-bottom: 1px solid var(--line);
-  padding-bottom: 10px;
-}
-.free-dictation-form h3 {
-  font-size: 14px;
-}
-.free-dictation-options {
-  display: grid;
-  gap: 8px;
-  margin-top: 12px;
-}
-.free-dictation-options label {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  min-height: 34px;
-  font-size: 14px;
-}
-.free-dictation-options small {
-  padding: 2px 7px;
-  border-radius: 4px;
-  background: var(--panel);
-  color: var(--muted);
-  font-size: 11px;
-}
-.free-dictation-ranges {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 20px;
-}
-.free-dictation-size {
-  margin-top: 16px;
-}
-.free-dictation-size select {
-  width: 100px;
-}
-.free-dictation-count {
-  margin-top: 12px;
-  font-size: 13px;
 }
 .today-page > .page-head { position: relative; }
 .today-date {

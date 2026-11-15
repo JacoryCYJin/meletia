@@ -1,12 +1,17 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { newCard, localDay } from "../src/core/content.js";
-import { graduate, reviewCard, missSpelling } from "../src/core/library.js";
+import { newCard } from "../src/features/library/model.js";
+import { localDay } from "../src/shared/date.js";
+import {
+  graduate,
+  missSpelling,
+  reviewCard,
+} from "../src/features/study/progress.js";
 import {
   nextReviewText,
   pendingStudyCards,
   studySummary,
-} from "../src/core/study-summary.js";
+} from "../src/features/study/summary.js";
 
 const now = new Date(2026, 10, 8, 20);
 const settings = { dailyNew: 20, dailyReview: null, groupSize: 10 };

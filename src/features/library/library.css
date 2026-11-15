@@ -1,0 +1,163 @@
+/* Library and card entries */
+.library-heading {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+}
+.library-heading .lede {
+  margin-top: 6px;
+  font-size: 12px;
+}
+.library-heading h1 {
+  font-size: 28px;
+}
+.dot-separator {
+  margin-inline: 10px;
+}
+.toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 24px;
+}
+.search {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex: 1;
+  min-width: 160px;
+  padding: 0 12px;
+  border: 1px solid var(--line-strong);
+  border-radius: 8px;
+  color: var(--muted);
+}
+.search input {
+  border: 0;
+  padding: 0;
+  background: transparent;
+}
+.search input:focus {
+  box-shadow: none;
+}
+.search:focus-within {
+  box-shadow: 0 0 0 2px var(--focus);
+  border-color: var(--muted);
+}
+.segmented {
+  display: flex;
+  gap: 2px;
+  padding: 3px;
+  background: var(--panel);
+  border-radius: 8px;
+}
+.segmented button {
+  height: 32px;
+  padding-inline: 9px;
+  border: 0;
+  background: transparent;
+  font-size: 12px;
+  color: var(--muted);
+}
+.segmented .selected {
+  color: var(--ink);
+  background: var(--bg);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+}
+.segmented button span {
+  color: var(--faint);
+  font-variant-numeric: tabular-nums;
+}
+.action-menu {
+  position: relative;
+}
+.action-menu summary {
+  list-style: none;
+  display: grid;
+  place-items: center;
+  border-radius: 8px;
+}
+.action-menu summary::-webkit-details-marker {
+  display: none;
+}
+.action-menu[open] summary {
+  background: var(--panel);
+}
+.action-menu > div {
+  position: absolute;
+  right: 0;
+  top: 42px;
+  z-index: 3;
+  min-width: 150px;
+  background: var(--bg);
+  padding: 6px;
+  border-radius: 10px;
+  box-shadow: var(--shadow);
+}
+.action-menu > div button {
+  width: 100%;
+  justify-content: flex-start;
+  background: transparent;
+  border-color: transparent;
+}
+.action-menu > div button:hover:not(:disabled) {
+  background: var(--hover);
+}
+.action-menu > div button.danger:hover:not(:disabled) {
+  background: var(--danger-soft);
+}
+.action-menu > div button:active:not(:disabled) {
+  background: var(--selected);
+}
+.list-labels,
+.word-row {
+  display: grid;
+  grid-template-columns: minmax(120px, 190px) minmax(0, 1fr) 64px;
+  gap: 20px;
+}
+.list-labels {
+  font-size: 11px;
+  color: var(--muted);
+  padding: 12px;
+  border-bottom: 1px solid var(--line);
+}
+.word-row {
+  height: auto;
+  width: 100%;
+  padding: 19px 12px;
+  align-items: center;
+  text-align: left;
+  border: 0;
+  border-bottom: 1px solid var(--line);
+  border-radius: 0;
+  font-weight: 400;
+  white-space: normal;
+}
+.word-term {
+  font-size: 15px;
+  font-weight: 550;
+  overflow-wrap: anywhere;
+}
+.word-sense {
+  font-size: 13px;
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+.badge {
+  justify-self: end;
+  font-size: 11px;
+  padding: 2px 7px;
+  border-radius: 5px;
+  color: var(--muted);
+  background: var(--panel);
+  white-space: nowrap;
+}
+.badge-due {
+  background: var(--warning-soft);
+  color: var(--warning);
+}
+.badge-learned {
+  background: var(--success-soft);
+  color: var(--success);
+}
+

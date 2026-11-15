@@ -1,10 +1,30 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import Papa from 'papaparse';
-import { newCard, localDay } from '../src/core/content.js';
-import { withStudyAttempt, studyDaysOf } from '../src/core/study-status.js';
-import { studyExport, studyRows, availableStudyDays } from '../src/core/study-export.js';
-import { state, loadLibrary, createBook, importCards, saveStudyAttempt, saveStudyResult, undoStudyResult, graduate, missSpelling, reviewCard } from '../src/core/library.js';
+import { newCard } from '../src/features/library/model.js';
+import { localDay } from '../src/shared/date.js';
+import {
+  studyDaysOf,
+  withStudyAttempt,
+} from '../src/features/study/mastery.js';
+import {
+  availableStudyDays,
+  studyExport,
+  studyRows,
+} from '../src/features/study/export.js';
+import { loadLibrary, state } from '../src/storage/store.js';
+import { createBook } from '../src/features/books/actions.js';
+import { importCards } from '../src/features/import/actions.js';
+import {
+  saveStudyAttempt,
+  saveStudyResult,
+  undoStudyResult,
+} from '../src/features/study/actions.js';
+import {
+  graduate,
+  missSpelling,
+  reviewCard,
+} from '../src/features/study/progress.js';
 const day1 = new Date(2026,10,8,23,59), day2 = new Date(2026,10,9,0,1);
 const card = word => newCard({word,definition:'释义'});
 const books = cards => [{name:'雅思',cardIds:cards.map(c=>c.id)}];

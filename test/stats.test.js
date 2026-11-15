@@ -1,12 +1,12 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { localDay } from "../src/core/content.js";
+import { localDay } from "../src/shared/date.js";
+import { dayTasks } from "../src/features/study/tasks.js";
 import {
-  dayTasks,
   recentDays,
   streakOf,
   todayLabel,
-} from "../src/core/stats.js";
+} from "../src/features/insights/stats.js";
 
 const now = new Date(2026, 10, 4, 20);
 const day = (offset) => {

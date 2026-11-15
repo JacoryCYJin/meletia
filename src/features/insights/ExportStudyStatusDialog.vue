@@ -1,9 +1,13 @@
 <script setup>
 import { computed, onMounted, onUnmounted, ref } from "vue";
-import { state } from "../../core/library.js";
-import { localDay } from "../../core/content.js";
-import { availableStudyDays, studyExport, saveStudyExport } from "../../core/study-export.js";
-import { notify } from "../../core/notifications.js";
+import { state } from "../../storage/store.js";
+import { localDay } from "../../shared/date.js";
+import {
+  availableStudyDays,
+  saveStudyExport,
+  studyExport,
+} from "../study/export.js";
+import { notify } from "../../shared/notifications.js";
 import Modal from "../../shared/Modal.vue";
 
 const emit = defineEmits(["close"]);

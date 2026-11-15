@@ -1,0 +1,118 @@
+/* Today */
+/* Today */
+.resume-panel {
+  display: flex;
+  gap: 16px;
+  align-items: center;
+  background: var(--panel);
+  padding: 22px 24px;
+  border-radius: 12px;
+  margin-bottom: 28px;
+}
+.resume-panel > svg {
+  flex: none;
+  color: var(--muted);
+}
+.resume-panel > div {
+  flex: 1;
+}
+.resume-panel h2 {
+  font-size: 16px;
+}
+.resume-panel p {
+  color: var(--muted);
+  font-size: 13px;
+  margin-top: 4px;
+}
+.task-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0;
+  margin: 0 0 44px;
+  border-block: 1px solid var(--line);
+}
+.task {
+  padding: 28px 28px 28px 0;
+}
+.task + .task {
+  border-left: 1px solid var(--line);
+  padding-inline: 28px 0;
+}
+.task-heading {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.task-heading svg {
+  color: var(--muted);
+}
+.task-heading h2 {
+  font-size: 17px;
+}
+.task-count {
+  margin-left: auto;
+  color: var(--muted);
+  font-size: 14px;
+  font-variant-numeric: tabular-nums;
+}
+.task-hint {
+  margin: 14px 0 24px;
+  min-height: 44px;
+  max-width: 40ch;
+  color: var(--muted);
+  font-size: 13px;
+}
+.today-books {
+  border-top: 1px solid var(--line);
+}
+.today-book {
+  display: flex;
+  gap: 16px;
+  align-items: center;
+  width: 100%;
+  height: auto;
+  min-height: 84px;
+  border: 0;
+  border-bottom: 1px solid var(--line);
+  border-radius: 0;
+  text-align: left;
+  padding: 18px 8px;
+}
+.today-book > svg {
+  color: var(--muted);
+}
+.today-book-name {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  white-space: normal;
+}
+.today-book-name small {
+  display: block;
+  font-size: 12px;
+  color: var(--muted);
+  font-weight: 400;
+  margin-top: 3px;
+}
+.today-book-progress {
+  display: grid;
+  gap: 8px;
+  width: 120px;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+.meter {
+  display: block;
+  height: 3px;
+  background: var(--line);
+  border-radius: 3px;
+  overflow: hidden;
+}
+.meter :is(span, i) {
+  display: block;
+  height: 100%;
+  background: var(--muted);
+  transition: width 220ms ease;
+}
+

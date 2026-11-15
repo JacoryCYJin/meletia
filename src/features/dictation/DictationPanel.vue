@@ -1,11 +1,11 @@
 <script setup>
 import { nextTick, ref, watch } from "vue";
 import Icon from "../../shared/Icon.vue";
-import PronunciationButtons from "../../shared/PronunciationButtons.vue";
-import WordDetail from "../../shared/WordDetail.vue";
+import PronunciationButtons from "../speech/PronunciationButtons.vue";
+import WordDetail from "../library/components/WordDetail.vue";
 import TypeAnswerInput from "../../shared/TypeAnswerInput.vue";
-import DictationSummary from "../study/DictationSummary.vue";
-import { SPEECH_ACCENTS } from "../../core/speech.js";
+import DictationSummary from "./DictationSummary.vue";
+import { SPEECH_ACCENTS } from "../speech/speech.js";
 
 const props = defineProps({
   phase: { type: String, required: true },

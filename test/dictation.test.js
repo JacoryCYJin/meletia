@@ -1,13 +1,16 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { localDay, newCard, withDictationAttempt } from "../src/core/content.js";
+import { localDay } from "../src/shared/date.js";
+import { newCard } from "../src/features/library/model.js";
+import { withDictationAttempt } from "../src/features/dictation/model.js";
 import {
   buildFreeDictationQueue,
   dictationTasks,
-} from "../src/core/dictation.js";
-import { dayTasks } from "../src/core/stats.js";
-import { loadLibrary, saveDictationResult, state } from "../src/core/library.js";
-import { studyDaysOf } from "../src/core/study-status.js";
+} from "../src/features/dictation/tasks.js";
+import { dayTasks } from "../src/features/study/tasks.js";
+import { saveDictationResult } from "../src/features/dictation/actions.js";
+import { loadLibrary, state } from "../src/storage/store.js";
+import { studyDaysOf } from "../src/features/study/mastery.js";
 
 const now = new Date(2026, 10, 14, 9);
 const settings = {

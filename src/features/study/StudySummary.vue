@@ -1,5 +1,5 @@
 <script setup>
-import ExportStudyStatusButton from "../../shared/ExportStudyStatusButton.vue";
+import ExportStudyStatusButton from "./components/ExportStudyStatusButton.vue";
 defineProps({ summary: { type: Object, required: true }, busy: Boolean });
 defineEmits(["continue", "close"]);
 const dueDate = (value) => {

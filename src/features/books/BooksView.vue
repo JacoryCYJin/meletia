@@ -1,17 +1,12 @@
 <script setup>
 import { computed, nextTick, onMounted, onUnmounted, ref } from "vue";
-import {
-  createBook,
-  mergeBooks,
-  previewBookMerge,
-  setError,
-  setNotice,
-  state,
-  updateBook,
-} from "../../core/library.js";
-import { bookStats, bookUpdatedText, dictationStats } from "../../core/books.js";
+import { notify } from "../../shared/notifications.js";
+import { setError, state } from "../../storage/store.js";
+import { updateBook } from "./actions.js";
+import { bookStats, bookUpdatedText, dictationStats } from "./model.js";
+import CreateBookDialog from "./components/CreateBookDialog.vue";
+import MergeBooksDialog from "./components/MergeBooksDialog.vue";
 import Icon from "../../shared/Icon.vue";
-import Modal from "../../shared/Modal.vue";
 import ImportView from "../import/ImportView.vue";
 
 const emit = defineEmits(["open-book", "csv-preview", "trash"]);
@@ -48,29 +43,13 @@ const groups = computed(() => [
   { label: "我的词书", books: books.value.filter(({ book }) => !book.legacy) },
   { label: "旧分组", books: books.value.filter(({ book }) => book.legacy) },
 ]);
-const newName = ref("");
-const creating = ref(false);
-const pending = ref(false);
-const formError = ref("");
+const createOpen = ref(false);
+const mergeSource = ref("");
 const mergeBook = computed(() =>
   state.books.find((book) => book.id === mergeSource.value),
 );
 const importDialog = ref(null);
 const importOpen = ref(false);
-const mergeSource = ref("");
-const mergeOther = ref("");
-const mergeMode = ref("existing");
-const mergePriority = ref("source");
-const mergeName = ref("");
-const mergePreview = computed(() => {
-  if (!mergeSource.value || !mergeOther.value) return null;
-  const sourceFirst =
-    mergeMode.value === "new" && mergePriority.value === "source";
-  const [first, second] = sourceFirst
-    ? [mergeSource.value, mergeOther.value]
-    : [mergeOther.value, mergeSource.value];
-  return previewBookMerge(first, second);
-});
 
 async function openImport() {
   if (importOpen.value || state.busy) return;
@@ -88,48 +67,13 @@ function cancelImport(event) {
 }
 
 function openMerge(book) {
-  formError.value = "";
   mergeSource.value = book.id;
-  mergeOther.value = "";
-  mergeMode.value = "existing";
-  mergePriority.value = "source";
-  mergeName.value = "";
 }
 
-async function saveNewBook() {
-  if (!newName.value.trim() || pending.value) return;
-  formError.value = "";
-  pending.value = true;
-  try {
-    await createBook(newName.value);
-    newName.value = "";
-    creating.value = false;
-  } catch (cause) {
-    formError.value = String(cause);
-  } finally {
-    pending.value = false;
-  }
-}
-
-async function confirmMerge() {
-  const preview = mergePreview.value;
-  if (!preview || pending.value) return;
-  pending.value = true;
-  try {
-    const book = await mergeBooks(
-      preview.primary.id,
-      preview.secondary.id,
-      mergeMode.value === "new" ? mergeName.value : undefined,
-    );
-    mergeSource.value = "";
-    mergeOther.value = "";
-    setNotice(`已合并到「${book.name}」。`);
-    emit("open-book", book.id);
-  } catch (cause) {
-    formError.value = String(cause);
-  } finally {
-    pending.value = false;
-  }
+function onMerged(book) {
+  mergeSource.value = "";
+  notify.success(`已合并到「${book.name}」。`);
+  emit("open-book", book.id);
 }
 
 async function convertLegacy(book) {
@@ -178,11 +122,7 @@ async function toggleMode(book, mode) {
           type="button"
           class="primary"
           :disabled="state.busy"
-          @click="
-            creating = true;
-            newName = '';
-            formError = '';
-          "
+          @click="createOpen = true"
         >
           <Icon name="plus" :size="18" />新建词书
         </button>
@@ -307,133 +247,19 @@ async function toggleMode(book, mode) {
       启用多本词书时，新词会交替安排。同一个词在不同词书中独立记录进度。
     </p>
 
-    <Modal
-      v-if="creating"
-      title="新建词书"
-      description="给这本词书起个容易找到的名字。"
-      :busy="pending"
-      @close="creating = false"
-    >
-      <form id="create-book-form" @submit.prevent="saveNewBook">
-        <label class="field"
-          ><span>词书名称</span
-          ><input
-            v-model="newName"
-            aria-label="词书名称"
-            placeholder="例如：阅读中遇到的词"
-            maxlength="120"
-            :disabled="pending"
-            autofocus
-            required
-        /></label>
-        <p v-if="formError" class="field-error" role="alert">{{ formError }}</p>
-      </form>
-      <template #footer
-        ><button :disabled="pending" @click="creating = false">取消</button
-        ><button
-          class="primary"
-          form="create-book-form"
-          :disabled="pending || !newName.trim()"
-        >
-          {{ pending ? "正在创建…" : "创建词书" }}
-        </button></template
-      >
-    </Modal>
-    <Modal
+    <CreateBookDialog
+      v-if="createOpen"
+      @close="createOpen = false"
+      @created="createOpen = false"
+    />
+
+    <MergeBooksDialog
       v-if="mergeBook"
-      wide
-      title="合并词书"
-      :description="'将「' + mergeBook.name + '」与另一本词书合并。'"
-      :busy="pending"
+      :book="mergeBook"
       @close="mergeSource = ''"
-    >
-      <form
-        id="merge-book-form"
-        class="stack-form merge-form"
-        @submit.prevent="confirmMerge"
-      >
-        <label class="field"
-          ><span>合并方式</span
-          ><select v-model="mergeMode" :disabled="pending">
-            <option value="existing">合入已有词书</option>
-            <option value="new">合为一本新词书</option>
-          </select></label
-        >
-        <label class="field"
-          ><span>{{ mergeMode === "new" ? "另一本词书" : "合入哪本词书" }}</span
-          ><select v-model="mergeOther" :disabled="pending" required>
-            <option value="">选择词书</option>
-            <option
-              v-for="other in state.books.filter((b) => b.id !== mergeSource)"
-              :key="other.id"
-              :value="other.id"
-            >
-              {{ other.name }}
-            </option>
-          </select></label
-        >
-        <template v-if="mergeMode === 'new'"
-          ><label class="field"
-            ><span>新词书名称</span
-            ><input
-              v-model="mergeName"
-              :disabled="pending"
-              required
-              placeholder="合并后的词书名称" /></label
-          ><label class="field"
-            ><span>重复词优先保留</span
-            ><select v-model="mergePriority" :disabled="pending">
-              <option value="source">{{ mergeBook.name }}</option>
-              <option value="other">
-                {{
-                  state.books.find((b) => b.id === mergeOther)?.name ||
-                  "另一本词书"
-                }}
-              </option>
-            </select></label
-          ></template
-        >
-        <div v-if="mergePreview" class="result-summary">
-          <h3>合并预览</h3>
-          <dl>
-            <div>
-              <dt>移入</dt>
-              <dd>{{ mergePreview.moved }} 个词</dd>
-            </div>
-            <div>
-              <dt>重复</dt>
-              <dd>{{ mergePreview.duplicates.size }} 个词</dd>
-            </div>
-            <div>
-              <dt>合并后</dt>
-              <dd>{{ mergePreview.cardIds.length }} 个词</dd>
-            </div>
-          </dl>
-          <p>
-            重复词保留「{{ mergePreview.primary.name }}」的释义和进度。{{
-              mergeMode === "new"
-                ? "原来的两本词书将被移除。"
-                : "「" + mergeBook.name + "」将被移除。"
-            }}
-          </p>
-        </div>
-        <p v-if="formError" class="field-error" role="alert">{{ formError }}</p>
-      </form>
-      <template #footer
-        ><button :disabled="pending" @click="mergeSource = ''">取消</button
-        ><button
-          class="primary"
-          form="merge-book-form"
-          :disabled="
-            pending ||
-            !mergePreview ||
-            (mergeMode === 'new' && !mergeName.trim())
-          "
-        >
-          {{ pending ? "正在合并…" : "确认合并" }}
-        </button></template
-      >
-    </Modal>
+      @merged="onMerged"
+    />
+
     <dialog
       ref="importDialog"
       class="import-dialog"

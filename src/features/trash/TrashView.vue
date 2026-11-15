@@ -1,8 +1,14 @@
 <script setup>
 import { computed, onMounted, onUnmounted, ref } from "vue";
-import { state, restoreTrash, purgeTrash, emptyTrash, cleanupTrash } from "../../core/library.js";
-import { DAY_MS, isTrashExpired } from "../../core/recycle-bin.js";
-import { notify } from "../../core/notifications.js";
+import { state } from "../../storage/store.js";
+import {
+  cleanupTrash,
+  emptyTrash,
+  purgeTrash,
+  restoreTrash,
+} from "./actions.js";
+import { DAY_MS, isTrashExpired } from "./model.js";
+import { notify } from "../../shared/notifications.js";
 import Modal from "../../shared/Modal.vue";
 import Icon from "../../shared/Icon.vue";
 

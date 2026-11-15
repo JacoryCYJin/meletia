@@ -1,19 +1,21 @@
 <script setup>
-import { computed, nextTick, onMounted, onUnmounted, ref } from "vue";
+import { computed, onMounted, onUnmounted, ref } from "vue";
+import { useNavigation } from "./app/useNavigation.js";
+import { minSidebarWidth, useSidebar } from "./app/useSidebar.js";
 import TrashView from "./features/trash/TrashView.vue";
-import { cleanupTrash } from "./core/library.js";
-import { notify } from "./core/notifications.js";
+import { cleanupTrash } from "./features/trash/actions.js";
+import { notify } from "./shared/notifications.js";
 import TodayView from "./features/today/TodayView.vue";
 import BooksView from "./features/books/BooksView.vue";
 import LibraryView from "./features/library/LibraryView.vue";
 import InsightsView from "./features/insights/InsightsView.vue";
 import SettingsView from "./features/settings/SettingsView.vue";
 import StudyView from "./features/study/StudyView.vue";
-import BrowseView from "./features/study/BrowseView.vue";
+import BrowseView from "./features/library/BrowseView.vue";
 import CsvPreviewView from "./features/import/CsvPreviewView.vue";
 import Icon from "./shared/Icon.vue";
 import ToastHost from "./shared/ToastHost.vue";
-import { loadLibrary, state } from "./core/library.js";
+import { loadLibrary, state } from "./storage/store.js";
 
 const tabs = [
   { id: "today", label: "今日", icon: "today" },
@@ -29,241 +31,62 @@ const views = {
   trash: TrashView,
 };
 
-const page = ref("today");
-const openBookId = ref("");
-const openBook = computed(() =>
-  state.books.find((book) => book.id === openBookId.value),
-);
 const session = ref("");
 const extraNew = ref(false);
 const dictationActive = ref(false);
-const view = computed(() => views[page.value]);
 const mainPanel = ref(null);
-const navigation = ref([{ page: "today", bookId: "", scrollTop: 0 }]);
-const navigationIndex = ref(0);
-function historyIndex(direction) {
-  for (
-    let index = navigationIndex.value + direction;
-    index >= 0 && index < navigation.value.length;
-    index += direction
-  ) {
-    const route = navigation.value[index];
-    if (!route.bookId || state.books.some((book) => book.id === route.bookId))
-      return index;
-  }
-  return -1;
-}
-const canGoBack = computed(
-  () => state.ready && !state.busy && !session.value && historyIndex(-1) >= 0,
-);
-const canGoForward = computed(
-  () => state.ready && !state.busy && !session.value && historyIndex(1) >= 0,
-);
-function saveScroll() {
-  if (session.value) return;
-  navigation.value[navigationIndex.value].scrollTop =
-    mainPanel.value?.scrollTop ?? 0;
-}
-function showRoute(route) {
-  session.value = "";
-  dictationActive.value = false;
-  page.value = route.page;
-  openBookId.value = route.bookId;
-  nextTick(() =>
-    mainPanel.value?.scrollTo({ top: route.scrollTop, behavior: "auto" }),
-  );
-}
-function navigate(target, clearMessages = true) {
-  if (state.busy) return;
-  if (clearMessages) {
-    state.error = "";
-  }
-  saveScroll();
-  const current = navigation.value[navigationIndex.value];
-  if (current.page === target.page && current.bookId === target.bookId) {
-    showRoute(current);
-    return;
-  }
-  const route = { ...target, scrollTop: 0 };
-  navigation.value = [
-    ...navigation.value.slice(0, navigationIndex.value + 1),
-    route,
-  ];
-  navigationIndex.value = navigation.value.length - 1;
-  showRoute(route);
-}
-function traverseHistory(direction) {
-  if (
-    state.busy ||
-    !state.ready ||
-    session.value ||
-    document.querySelector("dialog[open]")
-  )
-    return;
-  const index = historyIndex(direction);
-  if (index < 0) return;
-  saveScroll();
-  navigationIndex.value = index;
-  state.error = "";
-  showRoute(navigation.value[index]);
-}
-function openBookPage(bookId) {
-  navigate({ page: "books", bookId });
-}
-function openBrowse(bookId) {
-  navigate({ page: "browse", bookId });
-}
-function openCsvPreview() {
-  navigate({ page: "csv-preview", bookId: "" });
-}
-function backToBooks() {
-  navigate({ page: "books", bookId: "" }, false);
-}
 
-const sidebarPreference = "meletia-sidebar-width-v2";
-const previousSidebarPreference = "meletia-sidebar-width";
-const minSidebarWidth = 58;
-const preferredSidebarWidth = ref(220);
-const windowWidth = ref(window.innerWidth);
-const maxSidebarWidth = computed(() =>
-  Math.max(minSidebarWidth, Math.min(320, windowWidth.value - 448)),
-);
-const sidebarWidth = computed(() =>
-  Math.max(
-    minSidebarWidth,
-    Math.min(maxSidebarWidth.value, preferredSidebarWidth.value),
-  ),
-);
-const compactSidebar = computed(() => sidebarWidth.value < 168);
-const resizing = ref(false);
-const sidebarAnimating = ref(false);
-const sidebarElement = ref(null);
-let sidebarAnimationTimer;
+const {
+  page,
+  openBook,
+  canGoBack,
+  canGoForward,
+  saveScroll,
+  navigate,
+  traverseHistory,
+  openBookPage,
+  openBrowse,
+  openCsvPreview,
+  backToBooks,
+} = useNavigation({ session, dictationActive, mainPanel });
+
+const view = computed(() => views[page.value]);
+
+const {
+  maxSidebarWidth,
+  sidebarWidth,
+  compactSidebar,
+  resizing,
+  sidebarAnimating,
+  sidebarElement,
+  startResize,
+  resizeSidebar,
+  finishResize,
+  resizeWithKeyboard,
+  finishSidebarAnimation,
+  toggleSidebar,
+} = useSidebar();
+
 let trashCleanupTimer;
 async function cleanExpiredTrash() {
-  try { await cleanupTrash(); }
-  catch (cause) { notify.error(`回收站清理失败，请重试。${String(cause.message ?? cause)}`); }
-}
-let dragOffset = 0;
-let dragStartWidth = 220;
-
-function measureWindow() {
-  stopSidebarAnimation();
-  windowWidth.value = window.innerWidth;
+  try {
+    await cleanupTrash();
+  } catch (cause) {
+    notify.error(
+      `回收站清理失败，请重试。${String(cause.message ?? cause)}`,
+    );
+  }
 }
 
 onMounted(() => {
-  try {
-    const saved = localStorage.getItem(sidebarPreference);
-    const previous =
-      saved === null ? localStorage.getItem(previousSidebarPreference) : null;
-    const width = Number(saved ?? previous);
-    if (width >= minSidebarWidth && width <= 320) {
-      preferredSidebarWidth.value =
-        previous !== null && width === 64 ? minSidebarWidth : width;
-      if (previous !== null) rememberSidebarWidth();
-    }
-  } catch {
-    // Window resizing still works when preference storage is unavailable.
-  }
-  window.addEventListener("resize", measureWindow);
   loadLibrary();
   trashCleanupTimer = setInterval(cleanExpiredTrash, 60000);
   window.addEventListener("focus", cleanExpiredTrash);
 });
 onUnmounted(() => {
-  window.removeEventListener("resize", measureWindow);
-  clearTimeout(sidebarAnimationTimer);
   clearInterval(trashCleanupTimer);
   window.removeEventListener("focus", cleanExpiredTrash);
 });
-
-function rememberSidebarWidth() {
-  try {
-    localStorage.setItem(
-      sidebarPreference,
-      String(preferredSidebarWidth.value),
-    );
-  } catch {
-    // Keep the current width for this window.
-  }
-}
-
-function setSidebarWidth(width) {
-  const next = Math.max(
-    minSidebarWidth,
-    Math.min(maxSidebarWidth.value, width),
-  );
-  if (next === sidebarWidth.value) return false;
-  preferredSidebarWidth.value = next;
-  return true;
-}
-
-function startResize(event) {
-  if (!event.isPrimary || event.button !== 0) return;
-  event.preventDefault();
-  dragStartWidth = preferredSidebarWidth.value;
-  stopSidebarAnimation(true);
-  dragOffset = event.clientX - sidebarWidth.value;
-  event.currentTarget.focus();
-  event.currentTarget.setPointerCapture(event.pointerId);
-  resizing.value = true;
-}
-
-function resizeSidebar(event) {
-  if (event.currentTarget.hasPointerCapture(event.pointerId)) {
-    setSidebarWidth(event.clientX - dragOffset);
-  }
-}
-
-function finishResize() {
-  resizing.value = false;
-  if (dragStartWidth !== preferredSidebarWidth.value) rememberSidebarWidth();
-}
-
-function resizeWithKeyboard(event) {
-  if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
-  stopSidebarAnimation(true);
-  const widths = {
-    ArrowLeft: sidebarWidth.value - 12,
-    ArrowRight: sidebarWidth.value + 12,
-    Home: minSidebarWidth,
-    End: maxSidebarWidth.value,
-  };
-  if (!Object.hasOwn(widths, event.key)) return;
-  event.preventDefault();
-  if (setSidebarWidth(widths[event.key])) rememberSidebarWidth();
-}
-
-function stopSidebarAnimation(keepCurrentWidth = false) {
-  if (keepCurrentWidth && sidebarAnimating.value && sidebarElement.value) {
-    preferredSidebarWidth.value =
-      sidebarElement.value.getBoundingClientRect().width;
-  }
-  clearTimeout(sidebarAnimationTimer);
-  sidebarAnimating.value = false;
-}
-
-function finishSidebarAnimation(event) {
-  if (
-    event.target === event.currentTarget &&
-    event.propertyName === "grid-template-columns"
-  ) {
-    stopSidebarAnimation();
-  }
-}
-
-function toggleSidebar() {
-  clearTimeout(sidebarAnimationTimer);
-  sidebarAnimating.value = !window.matchMedia(
-    "(prefers-reduced-motion: reduce)",
-  ).matches;
-  preferredSidebarWidth.value = compactSidebar.value ? 224 : minSidebarWidth;
-  rememberSidebarWidth();
-  if (sidebarAnimating.value) {
-    sidebarAnimationTimer = setTimeout(() => stopSidebarAnimation(), 360);
-  }
-}
 
 function go(id) {
   navigate({ page: id, bookId: "" });

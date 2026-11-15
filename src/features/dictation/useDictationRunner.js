@@ -1,23 +1,23 @@
 import { computed, onUnmounted, ref, watch } from "vue";
-import { definitionOf } from "../../core/content.js";
-import { notify } from "../../core/notifications.js";
+import { definitionOf } from "../library/model.js";
+import { notify } from "../../shared/notifications.js";
 import {
   answerDictation,
   continueDictation,
   dictationFeedbackTarget,
   dictationSummary,
   dictationTarget,
-  matchSpelling,
   replayDictation,
   skipDictation,
-} from "../../core/session.js";
+} from "./session.js";
+import { matchSpelling } from "../study/session.js";
 import {
   SPEECH_ACCENTS,
   newSpeechToken,
   speak,
   speechErrorMessage,
   stopSpeech,
-} from "../../core/speech.js";
+} from "../speech/speech.js";
 
 const isTyping = (event) =>
   Boolean(event.target?.closest?.("input,textarea,select,[contenteditable]"));

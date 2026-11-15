@@ -2,12 +2,9 @@
 import { computed, ref } from "vue";
 import Modal from "../../shared/Modal.vue";
 import Icon from "../../shared/Icon.vue";
-import { definitionOf } from "../../core/content.js";
-import {
-  state,
-  previewImportUndo,
-  undoImportBatch,
-} from "../../core/library.js";
+import { definitionOf } from "../library/model.js";
+import { state } from "../../storage/store.js";
+import { previewImportUndo, undoImportBatch } from "./actions.js";
 
 const props = defineProps({ book: { type: Object, required: true } });
 defineEmits(["close"]);

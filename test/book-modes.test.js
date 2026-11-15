@@ -1,13 +1,9 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { newCard } from "../src/core/content.js";
-import {
-  deleteBook,
-  loadLibrary,
-  mergeBooks,
-  restoreTrash,
-  state,
-} from "../src/core/library.js";
+import { newCard } from "../src/features/library/model.js";
+import { deleteBook, mergeBooks } from "../src/features/books/actions.js";
+import { restoreTrash } from "../src/features/trash/actions.js";
+import { loadLibrary, state } from "../src/storage/store.js";
 
 function useStorage(t, build) {
   let raw = JSON.stringify(build());

@@ -1,9 +1,27 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { newCard, localDay, STORE_VERSION } from "../src/core/content.js";
-import { todayBrowseCards, createBrowseSession, moveBrowse } from "../src/core/browse.js";
-import { state, loadLibrary, saveCard, importCards, undoImportBatch, saveStudyResult, saveStudyAttempt } from "../src/core/library.js";
-import { studyExport } from "../src/core/study-export.js";
+import { newCard } from "../src/features/library/model.js";
+import { localDay } from "../src/shared/date.js";
+import { STORE_VERSION } from "../src/storage/migrate.js";
+import {
+  createBrowseSession,
+  moveBrowse,
+  todayBrowseCards,
+} from "../src/features/library/browse.js";
+import {
+  loadLibrary,
+  state,
+} from "../src/storage/store.js";
+import { saveCard } from "../src/features/library/actions.js";
+import {
+  importCards,
+  undoImportBatch,
+} from "../src/features/import/actions.js";
+import {
+  saveStudyAttempt,
+  saveStudyResult,
+} from "../src/features/study/actions.js";
+import { studyExport } from "../src/features/study/export.js";
 
 const today = new Date(2026, 10, 10, 20);
 const yesterday = new Date(2026, 10, 9, 20);

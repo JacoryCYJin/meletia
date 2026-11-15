@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { execFileSync } from "node:child_process";
-import { learningCalendar } from "../src/core/stats.js";
+import { learningCalendar } from "../src/features/insights/stats.js";
 
 const valid = (calendar) => calendar.weeks.flat().filter((day) => day.inRange);
 const date = (year, month, day, hour = 12) =>
@@ -99,7 +99,7 @@ test("month labels cover every week without duplicate columns at short partial m
 });
 
 test("local calendar days remain contiguous across daylight-saving changes", () => {
-  const moduleURL = new URL("../src/core/stats.js", import.meta.url).href;
+  const moduleURL = new URL("../src/features/insights/stats.js", import.meta.url).href;
   const result = execFileSync(
     process.execPath,
     [

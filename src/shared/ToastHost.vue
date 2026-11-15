@@ -7,7 +7,7 @@ import {
   shallowRef,
   watch,
 } from "vue";
-import { notifications } from "../core/notifications.js";
+import { notifications } from "./notifications.js";
 import Icon from "./Icon.vue";
 
 const { visible, dismiss, pause, resume } = notifications;

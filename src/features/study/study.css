@@ -1,0 +1,198 @@
+/* Study workspace: fixed actions, independently scrolling content */
+.study {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  width: 100%;
+  max-width: none;
+  min-height: 0;
+}
+.study-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex: none;
+  min-height: 72px;
+  padding: 16px 32px;
+  border-bottom: 1px solid var(--line);
+}
+.study-head button {
+  font-size: 13px;
+}
+.study-mode {
+  font-size: 12px;
+  color: var(--muted);
+}
+.study-progress {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin-left: auto;
+  color: var(--muted);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+.study-progress .bar {
+  width: 120px;
+  height: 3px;
+  border-radius: 3px;
+  overflow: hidden;
+  background: var(--line);
+}
+.study-progress .bar span {
+  display: block;
+  height: 100%;
+  background: var(--ink);
+  transition: width 200ms ease;
+}
+.stage {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  outline: 0;
+}
+.stage-content {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 32px 40px;
+  scrollbar-width: thin;
+}
+.stage-meta {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 24px;
+  color: var(--muted);
+  font-size: 12px;
+}
+.term {
+  font-size: 44px;
+  line-height: 1.2;
+  letter-spacing: -0.035em;
+  font-weight: 650;
+  margin-bottom: 12px;
+  overflow-wrap: anywhere;
+}
+.phonetic {
+  color: var(--muted);
+  font-size: 13px;
+  margin-bottom: 28px;
+}
+.stage-content .study-choices {
+  margin-top: 28px;
+}
+.stage-actions {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 12px;
+  min-height: 88px;
+  padding: 20px 40px;
+  border-top: 1px solid var(--line);
+  background: var(--bg);
+}
+.stage-actions .grade {
+  min-width: 132px;
+  height: 44px;
+  justify-content: flex-start;
+}
+.stage-actions .grade-3 {
+  border-color: var(--ink);
+}
+.stage-actions .grade-1 {
+  color: var(--muted);
+}
+.senses {
+  margin-top: 28px;
+  display: grid;
+  gap: 14px;
+  max-width: 74ch;
+}
+.sense {
+  display: flex;
+  align-items: baseline;
+  gap: 14px;
+  line-height: 1.8;
+}
+.pos {
+  flex: none;
+  color: var(--muted);
+  font: 13px var(--mono);
+  min-width: 24px;
+}
+.block {
+  margin-top: 28px;
+  max-width: 74ch;
+}
+.block h3,
+.block-label {
+  font-size: 12px;
+  color: var(--muted);
+  margin-bottom: 12px;
+}
+.block ul {
+  margin: 0;
+  padding-left: 20px;
+}
+.block p + p {
+  margin-top: 12px;
+}
+.note {
+  background: var(--panel);
+  border-radius: 8px;
+  padding: 16px;
+  color: var(--muted);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.tag {
+  display: inline-block;
+  border-radius: 4px;
+  background: var(--panel);
+  color: var(--muted);
+  padding: 2px 7px;
+  font-size: 11px;
+}
+.waiting {
+  color: var(--muted);
+  font-size: 14px;
+  margin-top: 20px;
+}
+.spell-prompt {
+  margin: 4px 0 28px;
+}
+.hint {
+  color: var(--muted);
+  font-family: var(--mono);
+  letter-spacing: 0.12em;
+  font-size: 18px;
+  margin-bottom: 16px;
+}
+.feedback {
+  color: var(--danger);
+  font-size: 13px;
+  margin-top: 14px;
+  min-height: 22px;
+}
+.study-main > .banner {
+  flex: none;
+  margin: 12px 24px 0;
+  max-width: none;
+}
+
+
+/* Shared study action shortcut hints */
+.study .stage-actions button:has(> kbd),
+.study .summary-actions button:has(> kbd) {
+  position: relative;
+  padding-inline-end: 52px;
+}
+.study :is(.stage-actions, .summary-actions) button > kbd {
+  position: absolute;
+  inset-inline-end: 12px;
+  top: 50%;
+  margin: 0;
+  transform: translateY(-50%);
+}

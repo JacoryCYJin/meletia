@@ -7,7 +7,7 @@ import {
   ref,
   watch,
 } from "vue";
-import { learningCalendar } from "../../core/stats.js";
+import { learningCalendar } from "./stats.js";
 
 const props = defineProps({
   reviews: { type: Array, required: true },
